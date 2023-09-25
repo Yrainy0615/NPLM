@@ -1,7 +1,7 @@
 import os
 import point_cloud_utils as pcu
 
-class LeafDataManager():
+class LeafScanManager():
     def __init__(self, root_path):
         self.root_path = root_path
         self.neutral_path = os.path.join(root_path, 'canonical/')
@@ -71,10 +71,32 @@ class LeafDataManager():
 
         return obj_list
 
+class LeafImageManger():
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.all_species = os.listdir(root_dir)
+        
+    def get_all_trainfile_healthy(self):
+        
+        pass
+    
+    def get_all_mask(self):
+        all_mask = []
+        for root, dirs, files in os.walk(self.root_dir):
+            for file in files:
+                if file.endswith('.JPG') and 'mask' in file:
+                    all_mask.append(file)
+        return all_mask
+                    
+
 if __name__ == "__main__":
-    manager = LeafDataManager('/home/yang/projects/parametric-leaf/dataset/leaf')
-    all_species = manager.get_all_species()
-    for species in all_species:
-        poses = manager.get_poses(species)
-        neutral = manager.get_neutral_pose(species)
-    pass
+    manager = LeafScanManager('/home/yang/projects/parametric-leaf/dataset/leaf')
+    # all_species = manager.get_all_species()
+    # for species in all_species:
+    #     poses = manager.get_poses(species)
+    #     neutral = manager.get_neutral_pose(species)
+    # pass
+    img_root = '/home/yang/projects/parametric-leaf/dataset/LeafData'
+    imanager = LeafImageManger(img_root)
+    all_mask = imanager.get_all_mask()
+    

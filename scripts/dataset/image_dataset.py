@@ -10,6 +10,7 @@ import trimesh
 from img_to_3dsdf import SDF2D, sdf2d_3d, mesh_from_sdf
 import json
 import random
+from .DataManager import LeafImageManger
 
 def count_jpg_files(root_dir):
     count = 0
@@ -34,16 +35,74 @@ def save_file_info(root_dir):
         for info in jpg_files_info:
             file.write(f"{info}\n\n")
 
+    def get_label():
+        data_structure = {}
+
+        # 从文件中读取行
+        with open('dataset/jpg_files_info.txt', 'r') as file:
+            for line in file:
+                line = line.strip()  # 去除行尾的换行符
+                if not line:  # 跳过空行
+                    continue
+                # 拆分路径以获取需要的信息
+                parts = line.split('/')
+                category = parts[-3]  # 例如：Alstonia
+                health_status = parts[-2]  # 例如：healthy
+
+                # 更新数据结构
+                if category not in data_structure:
+                    data_structure[category] = {health_status: [line]}
+                else:
+                    if health_status not in data_structure[category]:
+                        data_structure[category][health_status] = [line]
+                    else:
+                        data_structure[category][health_status].append(line)
+        with open('shape_label.json', 'w') as f:
+            json.dump(data_structure, f)
+        with open('shape_label.json', 'r') as f:
+            data_structure = json.load(f)
+
+        train_structure = {}
+        test_structure = {}
+
+        # 设置随机种子以确保可重复性
+        random.seed(42)
+
+        # 遍历数据结构并分配数据点到训练集和测试集
+        for category, health_statuses in data_structure.items():
+            train_structure[category] = {}
+            test_structure[category] = {}
+            
+            for health_status, file_paths in health_statuses.items():
+                # 随机打乱路径
+                random.shuffle(file_paths)
+                
+                # 计算测试集的大小
+                test_size = len(file_paths) // 10  # 10%的数据作为测试集
+                
+                # 分配到训练集和测试集
+                test_structure[category][health_status] = file_paths[:test_size]
+                train_structure[category][health_status] = file_paths[test_size:]
+
+        # 将结果保存为JSON文件
+        with open('train_shape.json', 'w') as f:
+            json.dump(train_structure, f)
+            
+        with open('test_shape.json', 'w') as f:
+            json.dump(test_structure, f)     
+
 class ImageProcessor():
     """
     functions (need aligned 2d image dataset with mask)
         1. load 2d sdf from mask
         2. transpose 2d sdf to 3d voxel grid
         3. sampling points from voxel grid
+        4. image alignment
     """
     def __init__(self, root_path):
-        self.image_dirs = root_path
-        self.all_species = os.listdir(self.image_dirs)
+        self.root_dir = root_path
+        self.all_species = os.listdir(self.root_dir)
+        self.manager = LeafImageManger(self.root_dir)
         pass
     
     def mask_to_sdf(self, mask):
@@ -59,7 +118,7 @@ class ImageProcessor():
         pass
     
     
-class Image_preprocess():
+class Mask_preprocess():
     def __init__(self) -> None:
         pass
     """ 
@@ -139,65 +198,7 @@ class Image_preprocess():
 if __name__ == "__main__":
     root_path = '/home/yang/projects/parametric-leaf/dataset/LeafData'
     test_image = '/home/yang/projects/parametric-leaf/dataset/LeafData/Pomegranate/healthy/Pomegranate_healthy_0024_mask.JPG'
-    preprocessor  = Image_preprocess()
-    # preprocessor.process_images_in_directory(root_path)
-    # print(count_jpg_files(root_path))
-    # save_file_info(root_path)
-    #preprocessor.remove_noise(test_image)
-  #   preprocessor.resize_crop_mask(test_image)
-  # 初始化字典
-    # data_structure = {}
 
-    # 从文件中读取行
-    # with open('jpg_files_info.txt', 'r') as file:
-    #     for line in file:
-    #         line = line.strip()  # 去除行尾的换行符
-    #         if not line:  # 跳过空行
-    #             continue
-    #         # 拆分路径以获取需要的信息
-    #         parts = line.split('/')
-    #         category = parts[-3]  # 例如：Alstonia
-    #         health_status = parts[-2]  # 例如：healthy
 
-    #         # 更新数据结构
-    #         if category not in data_structure:
-    #             data_structure[category] = {health_status: [line]}
-    #         else:
-    #             if health_status not in data_structure[category]:
-    #                 data_structure[category][health_status] = [line]
-    #             else:
-    #                 data_structure[category][health_status].append(line)
-    # with open('shape_label.json', 'w') as f:
-    #     json.dump(data_structure, f)
-    with open('shape_label.json', 'r') as f:
-        data_structure = json.load(f)
 
-    train_structure = {}
-    test_structure = {}
 
-    # 设置随机种子以确保可重复性
-    random.seed(42)
-
-    # 遍历数据结构并分配数据点到训练集和测试集
-    for category, health_statuses in data_structure.items():
-        train_structure[category] = {}
-        test_structure[category] = {}
-        
-        for health_status, file_paths in health_statuses.items():
-            # 随机打乱路径
-            random.shuffle(file_paths)
-            
-            # 计算测试集的大小
-            test_size = len(file_paths) // 10  # 10%的数据作为测试集
-            
-            # 分配到训练集和测试集
-            test_structure[category][health_status] = file_paths[:test_size]
-            train_structure[category][health_status] = file_paths[test_size:]
-
-    # 将结果保存为JSON文件
-    with open('train_shape.json', 'w') as f:
-        json.dump(train_structure, f)
-        
-    with open('test_shape.json', 'w') as f:
-        json.dump(test_structure, f)     
-    pass
