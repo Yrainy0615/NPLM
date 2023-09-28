@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from .DataManager import LeafDataManager
+from .DataManager import LeafScanManager, LeafImageManger
 from typing import Literal
 import os
 import yaml
@@ -71,7 +71,25 @@ class LeafShapeDataset(Dataset):
                     'sup_grad_near_udf': sup_grad_near_udf,
                     'idx': np.array([index])}
         return ret_dict
-     
+
+
+class LeafImageDataset(Dataset):
+    def __init__(self,
+                 mode: Literal['train','val'],
+                 n_supervision_points_face: int,
+                 n_supervision_points_non_face: int,
+                 batch_size: int,
+                 sigma_near: float,
+                 root_dir: str):
+        self.manager = LeafImageManger(root_dir)
+        self.mode = mode
+        self.all_species = self.manager.get_all_species()
+        self.batch_size = batch_size
+        self.n_supervision_points_face = n_supervision_points_face
+        self.n_supervision_points_non_face  = n_supervision_points_non_face
+        self.sigma_near = sigma_near
+        self.all_pose = self.manager.get_all_pose()
+ 
      
 if __name__ == "__main__":
     cfg_path = '/home/yang/projects/parametric-leaf/NPM/scripts/configs/npm.yaml'

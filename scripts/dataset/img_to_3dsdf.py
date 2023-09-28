@@ -171,7 +171,7 @@ class SDF2D:
             offset = 127.5
             self.post_process_sdf(self.bit_pic_white, self.bit_pic_black, self.num, coefficient, offset)
             if output:
-                cv2.imwrite(self.output_filename('_sdf'), self.output_pic.to_numpy())
+                # cv2.imwrite(self.output_filename('_sdf'), self.output_pic.to_numpy())
                 return self.output_pic.to_numpy()
         else:  # no normalization
             if output:
@@ -305,8 +305,18 @@ def sdf2d_3d(sdf_image,viz_3d=False):
 
     middle_layer = z_layers  # 选择z轴的中间层放置2D SDF
     sdf_3d[:, :, middle_layer] = sdf_2d  # 在中间层放置2D SDF
-
-    pass
+    def normalize_array_to_neg_pos_half(arr):
+        min_vals = arr.min(axis=(0,1,2), keepdims=True)
+        max_vals = arr.max(axis=(0,1,2), keepdims=True)
+        
+        # 归一化到 [0, 1]
+        normalized_arr = (arr - min_vals) / (max_vals - min_vals)
+        
+        # 转换到 [-0.5, 0.5]
+        normalized_arr = normalized_arr - 0.5
+        
+        return normalized_arr
+    sdf_norm = normalize_array_to_neg_pos_half(sdf_3d)
     # 简单地可视化一下这个3D Voxel Grid
     if viz_3d:
         fig = plt.figure()
@@ -320,7 +330,7 @@ def sdf2d_3d(sdf_image,viz_3d=False):
 
 if __name__ == "__main__":
         # 假设您的2D SDF是一个圆形，中心点在(50, 50)，半径是40
-    img_name = r'dataset/LeafData/Basil/healthy/mask/2.png'
+    img_name = r'/home/yang/projects/parametric-leaf/dataset/LeafData/Bael/healthy/Bael_healthy_0001_mask_aligned.JPG'
 
     mySDF2D = SDF2D(img_name)
     sdf_2d = mySDF2D.mask2sdf()

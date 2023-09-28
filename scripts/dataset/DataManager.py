@@ -1,11 +1,13 @@
 import os
 import point_cloud_utils as pcu
+import json
 
 class LeafScanManager():
     def __init__(self, root_path):
         self.root_path = root_path
         self.neutral_path = os.path.join(root_path, 'canonical/')
         self.species_dirs = [d for d in os.listdir(root_path) if os.path.isdir(os.path.join(root_path, d)) and d !='canonical']
+
         
     def get_all_species(self):
         return self.species_dirs
@@ -75,7 +77,8 @@ class LeafImageManger():
     def __init__(self, root_dir):
         self.root_dir = root_dir
         self.all_species = os.listdir(root_dir)
-        
+        with open('/home/yang/projects/parametric-leaf/dataset/LeafData/shape_label.json', 'r') as f:
+            self.train_label = json.load(f)
     def get_all_trainfile_healthy(self):
         
         pass
@@ -85,12 +88,22 @@ class LeafImageManger():
         for root, dirs, files in os.walk(self.root_dir):
             for file in files:
                 if file.endswith('.JPG') and 'mask' in file:
-                    all_mask.append(file)
+                    all_mask.append(os.path.join(root,file))
         return all_mask
                     
-
+    def get_mask_train(self):
+        healthy_mask_list = []
+        disased_mask_list = []
+        for species in self.all_species:
+            sub_data = self.train_label.get(species,{})
+            disased_mask = sub_data.get('diseased', [])
+            healthy_mask = sub_data.get('healthy', [])
+            healthy_mask_list.extend(healthy_mask)
+            disased_mask_list.extend(disased_mask)
+        return healthy_mask_list, disased_mask_list
+    
 if __name__ == "__main__":
-    manager = LeafScanManager('/home/yang/projects/parametric-leaf/dataset/leaf')
+    manager = LeafScanManager('/home/yang/projects/parametric-leaf/dataset/LeafData')
     # all_species = manager.get_all_species()
     # for species in all_species:
     #     poses = manager.get_poses(species)
@@ -99,4 +112,6 @@ if __name__ == "__main__":
     img_root = '/home/yang/projects/parametric-leaf/dataset/LeafData'
     imanager = LeafImageManger(img_root)
     all_mask = imanager.get_all_mask()
+    healthy, diseased = imanager.get_mask_train()
+    pass
     
