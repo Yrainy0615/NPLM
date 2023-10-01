@@ -134,16 +134,16 @@ class ImageProcessor():
         sdf_2d = SDF.mask2sdf()
         sdf_3d = sdf2d_3d(sdf_2d)
         filename = save_path + '_sdf.npy'
-        np.save(filename, sdf_3d)
-        print(f'sdf file saced: {filename}')
+        # np.save(filename, sdf_3d)
+        # print(f'sdf file saced: {filename}')
         return sdf_3d
         
     
     def extract_mesh(self, sdf, save_path):
         mesh = mesh_from_sdf(sdf, self.voxel_mini, self.voxel_max, self.resolution)
-        filename = os.path.join(save_path, '.obj')
+        filename = save_path + '.obj'
         mesh.export(filename)
-        pass
+        print(f"{filename} is saved")
     
     def sampling_voxel(self, voxel):
         pass
@@ -338,17 +338,22 @@ if __name__ == "__main__":
     all_healthy, all_diseased = manager.get_mask_train()
     for healthy in all_healthy:
         base_path, _ = os.path.splitext(healthy)
-        base_path = base_path.rsplit('_aligned', 1)[0]
-   
-        processor.mask_to_sdf(healthy, base_path)
+        base_path = base_path.rsplit('_mask', 1)[0]
+        filename = base_path + '.obj'
+        if not os.path.exists(filename):
+            sdf_3d =processor.mask_to_sdf(healthy, base_path)
+            processor.extract_mesh(sdf_3d, base_path)
+
             #processor.image_alignment(healthy)
     for diseased in all_diseased:
         base_path, _ = os.path.splitext(diseased)
-        base_path = base_path.rsplit('_aligned', 1)[0]
-
+        # base_path = base_path.rsplit('_aligned', 1)[0]
+        filename = base_path + '.obj'
+        if not os.path.exists(filename):
             #processor.image_alignment(diseased)
-        processor.mask_to_sdf(diseased, base_path)
-    
+            sdf_3d = processor.mask_to_sdf(diseased, base_path)
+            processor.extract_mesh(sdf=sdf_3d, save_path=base_path)
+        
 
 
 

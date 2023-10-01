@@ -1,6 +1,7 @@
 import os
 import point_cloud_utils as pcu
 import json
+import trimesh
 
 class LeafScanManager():
     def __init__(self, root_path):
@@ -101,6 +102,42 @@ class LeafImageManger():
             healthy_mask_list.extend(healthy_mask)
             disased_mask_list.extend(disased_mask)
         return healthy_mask_list, disased_mask_list
+
+    def get_species_to_idx(self):
+        dir_list = os.listdir(self.root_dir)
+        species_list = [folder for folder in dir_list if os.path.isdir(os.path.join(self.root_dir, folder))]
+        species_to_idx = {}  # 创建一个空字典来保存映射
+        species_to_idx = {species: idx for idx, species in enumerate(species_list)}
+        return species_to_idx
+    
+    
+    def load_mesh(self,path):
+        mesh = pcu.TriangleMesh()
+        v, f = pcu.load_mesh_vf(path)
+        mesh.vertex_data.positions = v
+        mesh.face_data.vertex_ids = f
+        return mesh
+
+    def get_all_mesh(self):
+        all_mesh = []
+        for root, dirs, files in os.walk(self.root_dir):
+            for file in files:
+                if 'obj' in file and 'healthy' in file:
+                    all_mesh.append(os.path.join(root, file))
+        
+        return all_mesh
+    def extract_info_from_meshfile(self, file):
+        base, filename = os.path.split(file)
+        mesh =self.load_mesh(file)
+        _, attribute = os.path.split(base)
+        _, species = os.path.split(os.path.dirname(base))
+        ret = {
+            'mesh': mesh,
+            'attribute': attribute,
+            'species': species
+        }
+        return ret
+        
     
 if __name__ == "__main__":
     manager = LeafScanManager('/home/yang/projects/parametric-leaf/dataset/LeafData')
@@ -112,6 +149,8 @@ if __name__ == "__main__":
     img_root = '/home/yang/projects/parametric-leaf/dataset/LeafData'
     imanager = LeafImageManger(img_root)
     all_mask = imanager.get_all_mask()
-    healthy, diseased = imanager.get_mask_train()
+    #healthy, diseased = imanager.get_mask_train()
+    all_mesh = imanager.get_all_mesh()
+    train_dict = imanager.extract_info_from_meshfile(all_mesh[0])
     pass
     

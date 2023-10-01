@@ -294,16 +294,16 @@ def mesh_from_sdf(logits, mini, maxi, resolution):
     return trimesh.Trimesh(vertices, triangles)
 
 
-
 def sdf2d_3d(sdf_image,viz_3d=False):
 
     # 定义z轴层数
-    z_layers = 256
+    z_layers = 32
     sdf_2d = image_to_sdf(sdf_image)
+    sdf_2d = cv2.resize(sdf_2d, (32,32),interpolation=cv2.INTER_AREA)
     # 创建3D Voxel Grid
-    sdf_3d = np.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers * 2))
+    sdf_3d = np.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers))
 
-    middle_layer = z_layers  # 选择z轴的中间层放置2D SDF
+    middle_layer = z_layers //2 # 选择z轴的中间层放置2D SDF
     sdf_3d[:, :, middle_layer] = sdf_2d  # 在中间层放置2D SDF
     def normalize_array_to_neg_pos_half(arr):
         min_vals = arr.min(axis=(0,1,2), keepdims=True)

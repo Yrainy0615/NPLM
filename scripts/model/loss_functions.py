@@ -1,17 +1,19 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
-from model.diff_operators import gradient    
+from scripts.model.diff_operators import gradient    
 
 
-def compute_loss(batch, decoder, latent_codes, device):
+def compute_loss(batch, decoder, latent_idx, latent_spc, device):
     if 'path' in batch:
         del batch['path']
-
     batch_cuda_npm = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
 
     idx = batch.get('idx').to(device)
-    glob_cond = latent_codes(idx)
+    spc = batch.get('species').to(device)
+    glob_cond_idx = latent_idx(idx)
+    glob_cond_spc = latent_spc(spc)
+    glob_cond = torch.cat((glob_cond_idx,glob_cond_spc.unsqueeze(1)),dim=2)
     loss_dict = actual_compute_loss(batch_cuda_npm, decoder, glob_cond)
 
     return loss_dict

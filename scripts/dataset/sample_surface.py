@@ -1,6 +1,5 @@
 import sys
-sys.path.append("/home/yang/projects/parametric-leaf/scripts")
-from DataManager import LeafDataManager
+from .DataManager import LeafScanManager
 import point_cloud_utils as pcu
 import pyvista as pv
 import trimesh
