@@ -16,7 +16,7 @@ import os
 import wandb
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--config',type=str, default='/home/yang/projects/parametric-leaf/NPLM/scripts/configs/npm.yaml', help='config file')
+parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
 parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
 parser.add_argument('--gpu', type=int, default=0, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
@@ -35,7 +35,7 @@ if args.mode == "shape":
                             batch_size=CFG['training']['batch_size'],
                             sigma_near=CFG['training']['sigma_near'],
                             root_dir=CFG['training']['root_dir'])
-        trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=2)
+        trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=4)
         decoder = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],
             hidden_dim=CFG['decoder']['decoder_hidden_dim'],
@@ -54,7 +54,7 @@ if args.mode == "viz_shape":
                         batch_size=CFG['training']['batch_size'],
                         sigma_near=CFG['training']['sigma_near'],
                         root_dir=CFG['training']['root_dir'])
-        trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=1)
+        trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=4)
         decoder = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],
             hidden_dim=CFG['decoder']['decoder_hidden_dim'],
