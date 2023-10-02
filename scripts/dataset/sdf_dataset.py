@@ -2,12 +2,12 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from .DataManager import LeafScanManager, LeafImageManger
+from DataManager import LeafScanManager, LeafImageManger
 from typing import Literal
 import os
 import yaml
 import igl
-from .sample_surface import sample_surface
+from sample_surface import sample_surface
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)
@@ -90,13 +90,27 @@ class LeafImageDataset(Dataset):
         self.sigma_near = sigma_near
         self.all_mesh= self.manager.get_all_mesh()
         self.species_to_idx = self.manager.get_species_to_idx()
+        self.rgb_list = self.manager.get_all_rgb_healthy()
+        self.mask_list = self. manager.get_all_mask_healthy()
+        assert len(self.rgb_list) == len(self.mask_list)
+        rgb_data = []
+        mask_data = []
+        for i in range(len(self.rgb_list)):
+            rgb, mask, rgba = self.manager.cv2_read_rgba(self.rgb_list[i], self.mask_list[i])
+            rgb_data.append(rgb)
+            mask_data.append(mask)
+        self.data = {
+            'rgb':torch.tensor(np.stack(rgb_data, axis=0), dtype=torch.float32).permute(0,3,1,2) / 255.,# (n_img, 1, h, w)
+            'alpha':torch.tensor(np.stack(mask_data, axis=0), dtype=torch.float32)[:,None,:,:] # (n_img, 1,h,w)
+         }
+                   
     
     def __len__(self):
         return len(self.all_mesh)
     
     def __getitem__(self, index):
         train_file = self.all_mesh[index]
-        dict = self.manager.extract_info_from_meshfile(train_file)
+        dict = self.manager.extract_info_from_file(train_file)
         mesh = dict['mesh']
         sample = sample_surface(mesh,n_samps=2000)
         sup_points = sample['points']
@@ -104,18 +118,30 @@ class LeafImageDataset(Dataset):
         sup_grad_far = uniform_ball(self.n_supervision_points_face //8, rad=0.5)
         sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
         sup_grad_near_udf = np.abs(igl.signed_distance(sup_grad_near,mesh.vertex_data.positions, mesh.face_data.vertex_ids)[0])
+        rgb = self.data['rgb'][index]
+        alpha = self.data['alpha'][index]
+        rgb = rgb*alpha        
         ret_dict = {'points': sup_points,
                     'normals': sup_normals,
                     'sup_grad_far': sup_grad_far,
                     'sup_grad_near': sup_grad_near,
                     'sup_grad_near_udf': sup_grad_near_udf,
                     'idx': np.array([index]),
-                    'species':self.species_to_idx[dict['species']] }
+                    'species':self.species_to_idx[dict['species']] ,
+                    'image': rgb,
+                    'mask':alpha}
         return ret_dict
+    def get_dataloader(self, shuffle = True):
+        torch.manual_seed(0)
+        torch.cuda.manual_seed(0)
+        np.random.seed(0)
         
+        return DataLoader(self, batch_size=self.batch_size,
+                          num_workers=8,shuffle=shuffle)
+           
      
 if __name__ == "__main__":
-    cfg_path = '/home/yang/projects/parametric-leaf/NPLM/scripts/configs/npm.yaml'
+    cfg_path = 'NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
     dataset = LeafImageDataset(mode='train',
                                n_supervision_points_face=CFG['training']['npoints_decoder'],
@@ -124,6 +150,6 @@ if __name__ == "__main__":
                                sigma_near=CFG['training']['sigma_near'],
                                root_dir=CFG['training']['root_dir'])
     
-    dataloader = DataLoader(dataset, batch_size=2,shuffle=False, num_workers=2)
+    dataloader = dataset.get_dataloader()
     batch = next(iter(dataloader))
     pass

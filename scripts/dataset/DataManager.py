@@ -2,6 +2,9 @@ import os
 import point_cloud_utils as pcu
 import json
 import trimesh
+import cv2
+import numpy as np
+from pytorch3d.io import load_obj
 
 class LeafScanManager():
     def __init__(self, root_path):
@@ -80,17 +83,28 @@ class LeafImageManger():
         self.all_species = os.listdir(root_dir)
         with open('dataset/LeafData/shape_label.json', 'r') as f:
             self.train_label = json.load(f)
+            
     def get_all_trainfile_healthy(self):
         
         pass
     
-    def get_all_mask(self):
+    def get_all_mask_healthy(self):
         all_mask = []
         for root, dirs, files in os.walk(self.root_dir):
             for file in files:
-                if file.endswith('.JPG') and 'mask' in file:
+                if file.endswith('.JPG') and 'mask' in file and 'healthy' in file:
                     all_mask.append(os.path.join(root,file))
+        all_mask.sort()
         return all_mask
+    
+    def get_all_rgb_healthy(self):
+        all_rgb = []
+        for root, dirs, files in os.walk(self.root_dir):
+            for file in files:
+                if file.endswith('.JPG') and not 'mask' in file and 'healthy' in file:
+                    all_rgb.append(os.path.join(root,file))
+        all_rgb.sort()
+        return all_rgb
                     
     def get_mask_train(self):
         healthy_mask_list = []
@@ -126,9 +140,14 @@ class LeafImageManger():
                     all_mesh.append(os.path.join(root, file))
         
         return all_mesh
-    def extract_info_from_meshfile(self, file):
+    def extract_info_from_file(self, file):
         base, filename = os.path.split(file)
-        mesh =self.load_mesh(file)
+        if '.obj' in file:
+            mesh =self.load_mesh(file)
+        else:
+            meshfile = file.split('_align')[0]
+            meshname = meshfile + '.obj'       
+            mesh = self.load_mesh(meshname)
         _, attribute = os.path.split(base)
         _, species = os.path.split(os.path.dirname(base))
         ret = {
@@ -137,6 +156,17 @@ class LeafImageManger():
             'species': species
         }
         return ret
+    
+    def cv2_read_rgba(self, img_path, mask_path):
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.resize(img,(128,128))
+        mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
+        mask = cv2.resize(mask, (128,128))
+        alpha_channel = np.where(mask == 255,255,0).astype(img.dtype)
+        rgba_img = cv2.merge([img, alpha_channel])
+        return img, mask, rgba_img
+        
         
     
 if __name__ == "__main__":
