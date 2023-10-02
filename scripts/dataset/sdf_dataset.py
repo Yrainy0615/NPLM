@@ -2,12 +2,12 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from DataManager import LeafScanManager, LeafImageManger
+from .DataManager import LeafScanManager, LeafImageManger
 from typing import Literal
 import os
 import yaml
 import igl
-from sample_surface import sample_surface
+from .sample_surface import sample_surface
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)

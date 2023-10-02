@@ -1,4 +1,6 @@
 from scripts.model.deepSDF import DeepSDF
+from scripts.model.generator import Generator
+from scripts.model.color_network import ColorNetwork
 import argparse
 import torch
 from torch.utils.data import DataLoader
@@ -6,9 +8,6 @@ from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafImageDataset
 import yaml
 from scripts.training.trainer_shape import ShapeTrainer
 import math
-from skimage.measure import marching_cubes
-import trimesh
-from matplotlib import pyplot as plt
 from scripts.model.reconstruction import mesh_from_logits, get_logits, create_grid_points_from_bounds
 import numpy as np
 import pyvista as pv
@@ -28,7 +27,7 @@ CFG = yaml.safe_load(open(args.config, 'r'))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.mode == "shape":
-        wandb.init(project='NPLM', name =args.wandb)
+        # wandb.init(project='NPLM', name =args.wandb)
         trainset = LeafImageDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
@@ -36,15 +35,21 @@ if args.mode == "shape":
                             sigma_near=CFG['training']['sigma_near'],
                             root_dir=CFG['training']['root_dir'])
         trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=4)
-        decoder = DeepSDF(
+        sdf_network = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],
             hidden_dim=CFG['decoder']['decoder_hidden_dim'],
             geometric_init=True,
             out_dim=1,
             )
 
-        decoder = decoder.to(device)
-        trainer = ShapeTrainer(decoder, CFG, trainloader, device)
+        color_network = ColorNetwork(cfg=CFG['color_network']['kwargs'])
+        
+        sdf_network = sdf_network.to(device)
+        color_network = color_network.to(device)
+        
+        generator = Generator(sdf_network=sdf_network, cfg=CFG, color_network=color_network)
+        generator = generator.to(device)
+        trainer = ShapeTrainer(sdf_network, CFG, trainloader, device)
         trainer.train(30001)
     
 if args.mode == "viz_shape":

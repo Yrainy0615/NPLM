@@ -8,8 +8,8 @@ import numpy as np
 import wandb
 
 class ShapeTrainer(object):
-    def __init__(self, decoder, cfg, trainloader,device):
-        self.decoder = decoder
+    def __init__(self, decoder, generator,cfg, trainloader,device):
+        self.generator = decoder
         self.latent_idx = torch.nn.Embedding(len(trainloader), decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
             self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
@@ -20,7 +20,7 @@ class ShapeTrainer(object):
             self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )
         self.combined_params = list(self.latent_idx.parameters()) + list(self.latent_spc.parameters())
-  
+        self.generator = generator
         self.cfg = cfg['training']
         self.device = device
         self.optimizer_decoder = optim.AdamW(params=list(decoder.parameters()),
@@ -110,6 +110,7 @@ class ShapeTrainer(object):
        
     def train_step(self, batch):
         self.decoder.train()
+        self.generator.train()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
         loss_dict = compute_loss(batch, self.decoder, self.latent_idx,self.latent_spc, self.device)

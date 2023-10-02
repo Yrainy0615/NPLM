@@ -7,6 +7,7 @@ decoder:
 training:
   root_dir: dataset/LeafData
   save_path: checkpoints
+  resolution: 128
   batch_size: 1
   ckpt_interval: 5000
   grad_clip: 0.1
@@ -31,3 +32,36 @@ training:
     anchors: 0.0
     symm_dist: 0.0
     middle_dist: 0.0
+    
+b2w_scene_prior:
+  __target__: NPLM/scripts/utils/pose_sampler.Plane
+  kwargs:
+    cam_loc: [0, -1, 0]
+    rot_degree_range_scale: 360
+    rot_roll_degree_range_scale: 20
+    xy_range_scale:
+      - 6
+      - 3.5
+fov: 10
+img_size: 256
+img_size_scene: 1588
+cam_dist: null
+scene_fov: null
+
+
+camera:
+  __target__: model.camera_network.Camera
+  kwargs:
+    cam_dist: 11.430052302761343
+    resolution: 794
+    fov: 56.97764364679225
+
+
+color_network:
+  __target__: src.models.fields.ColorNetwork
+  kwargs:
+    D: 8
+    W: 128
+    input_ch: 3
+    input_ch_views: 3
+    style_dim: 64
