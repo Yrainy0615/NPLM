@@ -78,7 +78,7 @@ class LeafImageManger():
     def __init__(self, root_dir):
         self.root_dir = root_dir
         self.all_species = os.listdir(root_dir)
-        with open('/home/yang/projects/parametric-leaf/dataset/LeafData/shape_label.json', 'r') as f:
+        with open('dataset/LeafData/train_shape.json', 'r') as f:
             self.train_label = json.load(f)
     def get_all_trainfile_healthy(self):
         

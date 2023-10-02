@@ -16,8 +16,8 @@ import os
 import wandb
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--config',type=str, default='/home/yang/projects/parametric-leaf/NPLM/scripts/configs/npm.yaml', help='config file')
-parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
+parser.add_argument('--config',type=str, default='/home/yyang/projects/parametric-leaf/NPLM/scripts/configs/npm.yaml', help='config file')
+parser.add_argument('--mode', type=str, default='viz_shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
 parser.add_argument('--gpu', type=int, default=0, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 # setting
@@ -28,7 +28,7 @@ CFG = yaml.safe_load(open(args.config, 'r'))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.mode == "shape":
-        wandb.init(project='NPLM', name =args.wandb)
+        # wandb.init(project='NPLM', name =args.wandb)
         trainset = LeafImageDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
@@ -48,7 +48,7 @@ if args.mode == "shape":
         trainer.train(30001)
     
 if args.mode == "viz_shape":
-        trainset = LeafShapeDataset(mode='train',
+        trainset = LeafImageDataset(mode='train',
                         n_supervision_points_face=CFG['training']['npoints_decoder'],
                         n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                         batch_size=CFG['training']['batch_size'],
@@ -64,11 +64,11 @@ if args.mode == "viz_shape":
         def generate_random_latent(device):
                 return torch.normal(mean=0, std=0.1/math.sqrt(512), size=(512,)).to(device)
 
-        checkpoint = torch.load('/home/yang/projects/parametric-leaf/checkpoints/udf_test_14500.tar')
+        checkpoint = torch.load('/home/yyang/projects/parametric-leaf/checkpointscheckpoint_epoch_0.tar')
         decoder.load_state_dict(checkpoint['decoder_state_dict'])
         decoder.eval()
         step =0
-        out_dir = '/home/yang/projects/parametric-leaf/sample_result/udf_test_shape'
+        out_dir = 'sample_result/2dshape'
         if not os.path.exists(out_dir):
                 os.makedirs(out_dir)
         mini = [-.95, -.95, -.95]
@@ -78,7 +78,8 @@ if args.mode == "viz_shape":
         grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
         decoder = decoder.to(device)
         #lat_mean = torch.from_numpy(np.load('dataset/npm_lat_mean.npy'))
-        lat_all = checkpoint['latent_codes_state_dict']['weight']
+        lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
+        lat_spc_all = checkpoint['latent_spc_state_dict']['weight']
         lat_mean = torch.mean(lat_all,dim=0).to(device)
         lat_std = torch.std(lat_all, dim=0).to(device)        
         alphs = torch.linspace(0,1, steps=10).cuda()
@@ -87,6 +88,7 @@ if args.mode == "viz_shape":
         for i in range(6):
                 #lat_rep = (torch.randn(lat_mean.shape).to(device) * lat_std * 0.85 + lat_mean).cuda()
                 alphs = torch.linspace(0,1, steps=10).cuda()
+                lat
                 interpolate = (1 - alphs[:, None]) * lat_all[i] + alphs[:, None] * lat_all[i+1]
                 for j in range(10):
                         lat_rep = interpolate[j]
