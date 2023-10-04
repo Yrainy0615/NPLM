@@ -6,19 +6,9 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from .volume_renderer import VolumeFeatureRenderer
-from .op import FusedLeakyReLU, fused_leaky_relu, upfirdn2d
+from .op import FusedLeakyReLU, upfirdn2d
 from pdb import set_trace as st
 
-# from .utils import (
-#     create_cameras,
-#     create_mesh_renderer,
-#     add_textures,
-#     create_depth_mesh_renderer,
-# )
-# from pytorch3d.renderer import TexturesUV
-# from pytorch3d.structures import Meshes
-# from pytorch3d.renderer import look_at_view_transform, FoVPerspectiveCameras
-# from pytorch3d.transforms import matrix_to_euler_angles
 
 
 class PixelNorm(nn.Module):
@@ -49,7 +39,7 @@ class MappingLinear(nn.Module):
     def forward(self, input):
         if self.activation != None:
             out = F.linear(input, self.weight)
-            out = fused_leaky_relu(out, self.bias, scale=1)
+            out = F.leaky_relu(out, self.bias, scale=1)
         else:
             out = F.linear(input, self.weight, bias=self.bias)
 

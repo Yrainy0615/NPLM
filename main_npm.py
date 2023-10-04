@@ -1,6 +1,7 @@
 from scripts.model.deepSDF import DeepSDF
 from scripts.model.generator import Generator
-from scripts.model.color_network import ColorNetwork
+from scripts.model.color_network import ColorNetwork, SingleVarianceNetwork
+from scripts.model.neus.fields import ShapeNetwork
 import argparse
 import torch
 from torch.utils.data import DataLoader
@@ -35,21 +36,23 @@ if args.mode == "shape":
                             sigma_near=CFG['training']['sigma_near'],
                             root_dir=CFG['training']['root_dir'])
         trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=4)
-        sdf_network = DeepSDF(
+        deepsdf = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],
             hidden_dim=CFG['decoder']['decoder_hidden_dim'],
             geometric_init=True,
             out_dim=1,
             )
-
-        color_network = ColorNetwork(cfg=CFG['color_network']['kwargs'])
+        sdf_network = ShapeNetwork(checkpoint_path=CFG['sdf_network']['kwargs']['checkpoint_path'],
+                                   kwargs= CFG['sdf_network']['kwargs'])
         
+        color_network = ColorNetwork(cfg=CFG['color_network']['kwargs'])
+        deviation_network = SingleVarianceNetwork()
         sdf_network = sdf_network.to(device)
         color_network = color_network.to(device)
-        
-        generator = Generator(sdf_network=sdf_network, cfg=CFG, color_network=color_network)
+        deviation_network = deviation_network.to(device)
+        generator = Generator(sdf_network=sdf_network, cfg=CFG, color_network=color_network, deviation_network=deviation_network)
         generator = generator.to(device)
-        trainer = ShapeTrainer(sdf_network, CFG, trainloader, device)
+        trainer = ShapeTrainer(sdf_network, generator,CFG, trainloader, device)
         trainer.train(30001)
     
 if args.mode == "viz_shape":

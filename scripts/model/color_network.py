@@ -8,7 +8,7 @@ class ColorNetwork(nn.Module):
         network = SirenGenerator()
         self.views_linears = network.views_linears
         self.rgb_linear = network.rgb_linear
-        self.style_dim = cfg['style_dim']
+        self.style_dim = cfg['style_dim']   
         self.w_dim = cfg['W']
 
     def forward(self, points, normals, feature_vectors, z, w):
@@ -24,3 +24,12 @@ class ColorNetwork(nn.Module):
 
         rgb = rgb.flatten(0, 3)
         return rgb
+    
+
+class SingleVarianceNetwork(nn.Module):
+    def __init__(self, init_val=0.3):
+        super(SingleVarianceNetwork, self).__init__()
+        self.register_parameter('variance', nn.Parameter(torch.tensor(init_val)))
+
+    def forward(self, x):
+        return torch.ones([len(x), 1], device='cuda') * torch.exp(self.variance * 10.0)

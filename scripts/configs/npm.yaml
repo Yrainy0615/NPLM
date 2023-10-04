@@ -1,6 +1,6 @@
 decoder:
-  decoder_lat_dim: 512
-  decoder_hidden_dim: 1024
+  decoder_lat_dim: 64
+  decoder_hidden_dim: 512
   decoder_nlayers: 8
 
 
@@ -62,6 +62,26 @@ color_network:
   kwargs:
     D: 8
     W: 128
+    input_ch: 3
+    input_ch_views: 3
+    style_dim: 64
+
+
+renderer:
+  __target__: src.third_party.neus.models.renderer.NeuSRenderer
+  kwargs:
+    n_importance: 4
+    n_outside: 0
+    n_samples: 16
+    perturb: 1
+    up_sample_steps: 1
+
+sdf_network:
+  __target__: src.models.fields.ShapeNetwork
+  kwargs:
+    D: 8
+    W: 128
+    checkpoint_path: "./checkpoints/sphere_init.pt"
     input_ch: 3
     input_ch_views: 3
     style_dim: 64
