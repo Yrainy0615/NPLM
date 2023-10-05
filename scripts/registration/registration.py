@@ -14,7 +14,7 @@ def show_mesh(mesh, keypoints):
     ax = fig.add_subplot(111, projection='3d')
     ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2], triangles=mesh.faces, color='gray', alpha=0.6)
     for i,idx in enumerate(keypoints):
-        point = mesh.vertices[idx]
+        point = idx
         ax.scatter3D(point[0], point[1], point[2], c='red', s=5)
         ax.text(point[0], point[1], point[2], str(i), fontsize=5, color='black')
 
@@ -220,8 +220,8 @@ class LeafRegistration():
         def sample_line_segment(mesh, start, end, n_samples=10):
             pts = np.linspace(start, end, n_samples)[:-1]
             # find nearest point on surface and return mesh vertex index
-            idx =icp_correspondence(template=mesh.vertices, target=pts)
-            return idx
+            # idx =icp_correspondence(template=mesh.vertices, target=pts)
+            return pts
 
         # Sample points on the top edge
         top_edge = sample_line_segment(mesh, mesh.vertices[keypoints['top']], mesh.vertices[keypoints['right']], 10)
@@ -236,10 +236,10 @@ class LeafRegistration():
         right_edge = sample_line_segment(mesh, mesh.vertices[keypoints['left']], mesh.vertices[keypoints['top']], 10)
 
         # Stack all points together
-        keypoints_samples = np.concatenate((top_edge, left_edge, bottom_edge, right_edge)).reshape(-1, 1)
-        return keypoints_samples.squeeze(1)
+        keypoints_samples = np.concatenate((top_edge, left_edge, bottom_edge, right_edge))
+        return keypoints_samples
      
-    def non_rigid_rigistration(self,target_path, template_path):
+    def ARAP_rigistration(self,target_path, template_path):
         template = trimesh.load_mesh(template_path)
         template = self.raw_to_canonical(template)  
         template.fill_holes()
@@ -253,61 +253,34 @@ class LeafRegistration():
         correspondence = self.get_correspondence(template, target, keypoints_temp, keypoints_target)
         # boundary_temp = self.get_boundary(template)
         keypoints_temp_up  = self.sampling_keypoints(template, keypoints_temp)
-        keypoints_temp_up = np.unique(keypoints_temp_up)
+        #keypoints_temp_up = np.unique(keypoints_temp_up)
         keypoints_target_up  = self.sampling_keypoints(target, correspondence)
-        keypoints_target_up = np.unique(keypoints_target_up)
+        keypoints_temp_up_surf = icp_correspondence(template.vertices, keypoints_temp_up)
+        keypoints_target_up_surf = icp_correspondence(target.vertices, keypoints_target_up)
+        #keypoints_target_up = np.unique(keypoints_target_up)
         # keypoints_target_up = icp_correspondence(template.vertices[keypoints_temp_up], target.vertices[keypoints_target_up])
-        show_mesh(template, keypoints_temp_up)
-        show_mesh(target, keypoints_target_up)
+        # show_mesh(template, template.vertices[keypoints_temp_up_surf])
+        # show_mesh(target, target.vertices[keypoints_target_up_surf])
         #compare_mesh(template, keypoints_temp, target, keypoints_target)
-        #compare_mesh(template, keypoints_temp_up, target, keypoints_target_up)
+        #compare_mesh(template, keypoints_temp_up_surf, target, keypoints_target_up_surf)
         # Use libigl to perform non-rigid deformation
         v, f = template.vertices, template.faces
 
-        # Using the keypoints as anchors
-        anchor_indices_template = list(keypoints_temp_up)
-        anchor_indices_target = list(keypoints_target_up)
 
         # Define the anchor positions
-        b = np.array(anchor_indices_template)
+        b = np.array(keypoints_temp_up_surf)
 
         # Precompute ARAP (assuming 3D vertices)
         arap = igl.ARAP(v, f, 3, b)
 
         # Set the positions of anchors in the target to their corresponding positions
-        bc = np.array([target.vertices[i] for i in anchor_indices_target])
+        bc = np.array([target.vertices[i] for i in keypoints_target_up_surf])
 
         # Perform ARAP deformation
         vn = arap.solve(bc, v)
         deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f)
-        compare_mesh(deformed_mesh, keypoints_temp_up, target, keypoints_target_up)
+        compare_mesh(deformed_mesh, keypoints_temp_up_surf, target, keypoints_target_up_surf)
         return deformed_mesh
-
-
-
-
-
-
-
-        
-        pass
-        # verts_temp = template.vertices[temp_idx]
-        
-        # # find correspondence
-        # verts_target = self.find_keypoints(template,pca_temp)
-        # target_tree = cKDTree(template.vertices)
-        # closest_vertex_idx = target_tree.query(verts_target)[1]
-        # #verts_target = self.find_keypoints(target, pca_target)     
-        
-        # # visualize
-        # #self.visualize_axis(template,pca=pca_temp,verts=verts_temp)
-        # self.visualize_axis(template,pca_temp, target.vertices[closest_vertex_idx])
-        
-        # # get vertex index
-        # anchor_indices_template = self.find_indices_of_vertex(template, verts_temp)
-        # anchor_indices_target = self.find_indices_of_vertex(target, verts_target)
-        
-
     
 
 if __name__ == '__main__':
@@ -316,9 +289,10 @@ if __name__ == '__main__':
     all_species = registrater.species
     spc0 = registrater.get_species_mesh(all_species[0])
     spc0.sort()
-    target = 'dataset/ScanData/ash/Leaf_ash-tree.001.obj'
-    template = 'dataset/ScanData/red/Leaf_red.001.obj'
-    registrater.non_rigid_rigistration(target, template)
+    target = 'dataset/ScanData/raw_scan/id1/id1_1.obj'
+    # template = 'dataset/ScanData/red/Leaf_red.001.obj'
+    template = '/home/yang/projects/parametric-leaf/dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
+    registrater.ARAP_rigistration(target, template)
     pass
     
     
