@@ -74,7 +74,7 @@ class LeafScanManager():
 
         return obj_list
 
-class LeafImageManger():
+class LeafImageManager():
     def __init__(self, root_dir):
         self.root_dir = root_dir
         self.all_species = os.listdir(root_dir)
@@ -110,6 +110,10 @@ class LeafImageManger():
         species_to_idx = {species: idx for idx, species in enumerate(species_list)}
         return species_to_idx
     
+    def get_all_species(self):
+        dir_list = os.listdir(self.root_dir)
+        species_list = [folder for folder in dir_list if os.path.isdir(os.path.join(self.root_dir, folder))]
+        return species_list
     
     def load_mesh(self,path):
         mesh = pcu.TriangleMesh()
