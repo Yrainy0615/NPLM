@@ -9,6 +9,8 @@ from sklearn.decomposition import PCA
 from scipy.spatial import cKDTree
 from matplotlib import pyplot as plt
 import igl
+import csv
+
 def show_mesh(mesh, keypoints):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -23,49 +25,22 @@ def show_mesh(mesh, keypoints):
     ax.set_zlim([-0.5, 0.5])
     plt.show() 
 
-def icp_correspondence(template, target):
-    tree = cKDTree(template)
+def icp_correspondence(template, target, template_contour):
+    # 使用子集构建KDTree
+    tree = cKDTree(template[template_contour])
+    
+    # 创建一个映射，将KDTree索引映射回原始template的索引
+    index_mapping = {i: original_idx for i, original_idx in enumerate(template_contour)}
+    
     idx_list = []
     for pts in target:
         _, idx = tree.query(pts)
-        idx_list.append(idx)
+        # 使用映射找到原始的索引
+        original_index = index_mapping[idx]
+        idx_list.append(original_index)
     return idx_list
-# def compare_mesh(mesh1, keypoints1, mesh2, keypoints2):
-#     # Create a new figure and 3D axis
-#     fig = plt.figure()
-#     ax = fig.add_subplot(111, projection='3d')
 
-#     # Define a color for each keypoint
-#     colors = {
-#         'top': 'red',
-#         'base': 'blue',
-#         'left': 'green',
-#         'right': 'yellow'
-#     }
 
-#     # Plot the first mesh faces
-#     ax.plot_trisurf(mesh1.vertices[:, 0], mesh1.vertices[:, 1], mesh1.vertices[:, 2], triangles=mesh1.faces, color='gray', alpha=0.6)
-
-    # # Plot keypoints for the first mesh
-    # for key, idx in keypoints1.items():
-    #     point = mesh1.vertices[idx]
-    #     ax.scatter3D(point[0], point[1], point[2], c=colors[key], s=100)
-
-    # # Plot the second mesh faces
-    # ax.plot_trisurf(mesh2.vertices[:, 0], mesh2.vertices[:, 1], mesh2.vertices[:, 2], triangles=mesh2.faces, color='lightblue', alpha=0.6)
-
-    # # Plot keypoints for the second mesh
-    # for key, idx in keypoints2.items():
-    #     point = mesh2.vertices[idx]
-    #     ax.scatter3D(point[0], point[1], point[2], c=colors[key], s=100)
-
-    # # Set axis limits
-    # ax.set_xlim([-0.5, 0.5])
-    # ax.set_ylim([-0.5, 0.5])
-    # ax.set_zlim([-0.5, 0.5]) 
-
-    # # Display the plot
-    # plt.show()
 def compare_mesh(mesh1, keypoints1, mesh2, keypoints2):
     # Create a new figure and 3D axis
     fig = plt.figure()
@@ -104,13 +79,30 @@ def compare_mesh(mesh1, keypoints1, mesh2, keypoints2):
 
     # Display the plot
     plt.show()
+def read_vertex_groups_from_csv(filepath):
+    group_dict = {}
+
+    with open(filepath, 'r') as csvfile:
+        csvreader = csv.reader(csvfile)
+        next(csvreader)  # skip header row
+
+        for row in csvreader:
+            group_name, index = row[0], int(row[1])
+            if group_name not in group_dict:
+                group_dict[group_name] = []
+            group_dict[group_name].append(index)
+
+    return group_dict
+
 
 class LeafRegistration():
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, template,vertex_info):
         self.root_dir = root_dir
         self.manager = LeafImageManager(root_dir)
         self.species = [d for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))]
         self.all_mesh = self.manager.get_all_mesh()
+        self.template = trimesh.load_mesh(template)
+        self.vertex_info = read_vertex_groups_from_csv(vertex_info)
         
     def raw_to_canonical(self,mesh):
         t = -mesh.centroid
@@ -122,9 +114,7 @@ class LeafRegistration():
 
     def get_boundary(self, mesh):
         # Find the boundary vertices
-        mesh = trimesh.creation.icosphere()
-        mesh.faces = mesh.faces[1:]
-        unique_edges = mesh.edges[trimesh.grouping.group_rows(mesh.edges_sorted, require_count=2)]
+        unique_edges = mesh.edges[trimesh.grouping.group_rows(mesh.edges_sorted, require_count=1)]
         boundary_vertex_indices = np.unique(unique_edges)
         return boundary_vertex_indices
 
@@ -217,82 +207,83 @@ class LeafRegistration():
         # Helper function to sample points on a line segment
     
     def sampling_keypoints(self,mesh, keypoints):
-        def sample_line_segment(mesh, start, end, n_samples=10):
+        def sample_line_segment(mesh, start, end, n_samples=24):
             pts = np.linspace(start, end, n_samples)[:-1]
             # find nearest point on surface and return mesh vertex index
             # idx =icp_correspondence(template=mesh.vertices, target=pts)
             return pts
 
         # Sample points on the top edge
-        top_edge = sample_line_segment(mesh, mesh.vertices[keypoints['top']], mesh.vertices[keypoints['right']], 10)
+        top_edge = sample_line_segment(mesh, mesh.vertices[keypoints['top']], mesh.vertices[keypoints['right']])
 
         # Sample points on the left edge
-        left_edge = sample_line_segment(mesh, mesh.vertices[keypoints['right']], mesh.vertices[keypoints['base']], 10)
+        left_edge = sample_line_segment(mesh, mesh.vertices[keypoints['right']], mesh.vertices[keypoints['base']])
 
         # Sample points on the bottom edge
-        bottom_edge = sample_line_segment(mesh, mesh.vertices[keypoints['base']], mesh.vertices[keypoints['left']], 10)
+        bottom_edge = sample_line_segment(mesh, mesh.vertices[keypoints['base']], mesh.vertices[keypoints['left']])
 
         # Sample points on the right edge
-        right_edge = sample_line_segment(mesh, mesh.vertices[keypoints['left']], mesh.vertices[keypoints['top']], 10)
+        right_edge = sample_line_segment(mesh, mesh.vertices[keypoints['left']], mesh.vertices[keypoints['top']])
 
         # Stack all points together
         keypoints_samples = np.concatenate((top_edge, left_edge, bottom_edge, right_edge))
         return keypoints_samples
      
-    def ARAP_rigistration(self,target_path, template_path):
-        template = trimesh.load_mesh(template_path)
-        template = self.raw_to_canonical(template)  
-        template.fill_holes()
+    def ARAP_rigistration(self,target_path):
+        template = self.raw_to_canonical(self.template)  
+        template = self.ICP_rigid_registration(target_path)
         target = trimesh.load_mesh(target_path)
         target = self.raw_to_canonical(target)
-        target.fill_holes()
-        pca_temp = self.find_pca(template)
         pca_target = self.find_pca(target)
-        keypoints_temp = self.find_keypoints(template,pca_temp)
         keypoints_target = self.find_keypoints(target,pca_target)
-        correspondence = self.get_correspondence(template, target, keypoints_temp, keypoints_target)
-        # boundary_temp = self.get_boundary(template)
-        keypoints_temp_up  = self.sampling_keypoints(template, keypoints_temp)
-        #keypoints_temp_up = np.unique(keypoints_temp_up)
-        keypoints_target_up  = self.sampling_keypoints(target, correspondence)
-        keypoints_temp_up_surf = icp_correspondence(template.vertices, keypoints_temp_up)
-        keypoints_target_up_surf = icp_correspondence(target.vertices, keypoints_target_up)
-        #keypoints_target_up = np.unique(keypoints_target_up)
-        # keypoints_target_up = icp_correspondence(template.vertices[keypoints_temp_up], target.vertices[keypoints_target_up])
-        # show_mesh(template, template.vertices[keypoints_temp_up_surf])
-        # show_mesh(target, target.vertices[keypoints_target_up_surf])
-        #compare_mesh(template, keypoints_temp, target, keypoints_target)
-        #compare_mesh(template, keypoints_temp_up_surf, target, keypoints_target_up_surf)
+        template_contour = self.vertex_info['contour']
+        # get boundary index of target mesh
+        target_contour = self.get_boundary(target)
+        keypoints_target_up = self.sampling_keypoints(target, keypoints_target)
+        
+        keypoints_target_surf = icp_correspondence(target.vertices, keypoints_target_up, template_contour=target_contour)        
+        # find correspondence
+        # show_mesh(template, template.vertices[template_contour])
+        # show_mesh(target, target.vertices[keypoints_target_surf])
+        # compare_mesh(template, template_contour, target, keypoints_target_surf)
+        
+        
+        
         # Use libigl to perform non-rigid deformation
         v, f = template.vertices, template.faces
 
 
         # Define the anchor positions
-        b = np.array(keypoints_temp_up_surf)
+        b = np.array(template_contour)
 
         # Precompute ARAP (assuming 3D vertices)
         arap = igl.ARAP(v, f, 3, b)
 
         # Set the positions of anchors in the target to their corresponding positions
-        bc = np.array([target.vertices[i] for i in keypoints_target_up_surf])
+        bc = np.array([target.vertices[i] for i in keypoints_target_surf])
 
         # Perform ARAP deformation
         vn = arap.solve(bc, v)
         deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f)
-        compare_mesh(deformed_mesh, keypoints_temp_up_surf, target, keypoints_target_up_surf)
+        compare_mesh(deformed_mesh, template_contour, target, keypoints_target_surf)
         return deformed_mesh
     
+    def ICP_rigid_registration(self, target_path):
+        target = trimesh.load_mesh(target_path)
+        template = self.raw_to_canonical(self.template)
+        target = self.raw_to_canonical(target)
+        aligned_mesh =template.copy()
+        transform, cost = trimesh.registration.mesh_other(template, target, samples=100,
+                                                          icp_first=10,icp_final=50,scale=False, return_cost=True)
+        aligned_mesh.apply_transform(transform)
+        return aligned_mesh
+        
 
 if __name__ == '__main__':
     root_dir = 'dataset/LeafData'
-    registrater  =LeafRegistration(root_dir)
-    all_species = registrater.species
-    spc0 = registrater.get_species_mesh(all_species[0])
-    spc0.sort()
-    target = 'dataset/ScanData/raw_scan/id1/id1_1.obj'
-    # template = 'dataset/ScanData/red/Leaf_red.001.obj'
-    template = '/home/yang/projects/parametric-leaf/dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
-    registrater.ARAP_rigistration(target, template)
-    pass
-    
-    
+    template = 'dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
+    vertex_info = 'dataset/vertex.csv'
+    registrater  =LeafRegistration(root_dir, template, vertex_info)
+    target = 'dataset/ScanData/poplar_dry/Leaf_poplar_dry.001.obj'
+    registrater.ARAP_rigistration(target)
+    #registrater.ICP_rigid_registration(target)
