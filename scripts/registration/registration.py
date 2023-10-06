@@ -23,13 +23,23 @@ def show_mesh(mesh, keypoints):
     ax.set_zlim([-0.5, 0.5])
     plt.show() 
 
-def icp_correspondence(template, target):
-    tree = cKDTree(template)
-    idx_list = []
-    for pts in target:
-        _, idx = tree.query(pts)
-        idx_list.append(idx)
-    return idx_list
+def icp_correspondence(template, target, contour):
+    if contour is None:
+        tree = cKDTree(template)
+        idx_list = []
+        for pts in target:
+            _, idx = tree.query(pts)
+            idx_list.append(idx)
+        return idx_list
+    else:   
+        tree = cKDTree(template[contour])
+        index_mapping = {i: original_idx for i, original_idx in enumerate(contour)}
+        idx_list = []
+        for pts in target:
+            _, idx = tree.query(pts)
+            original_index = index_mapping[idx]
+            idx_list.append(original_index)
+        return idx_list
 # def compare_mesh(mesh1, keypoints1, mesh2, keypoints2):
 #     # Create a new figure and 3D axis
 #     fig = plt.figure()
@@ -122,9 +132,7 @@ class LeafRegistration():
 
     def get_boundary(self, mesh):
         # Find the boundary vertices
-        mesh = trimesh.creation.icosphere()
-        mesh.faces = mesh.faces[1:]
-        unique_edges = mesh.edges[trimesh.grouping.group_rows(mesh.edges_sorted, require_count=2)]
+        unique_edges = mesh.edges[trimesh.grouping.group_rows(mesh.edges_sorted, require_count=1)]
         boundary_vertex_indices = np.unique(unique_edges)
         return boundary_vertex_indices
 
@@ -224,16 +232,16 @@ class LeafRegistration():
             return pts
 
         # Sample points on the top edge
-        top_edge = sample_line_segment(mesh, mesh.vertices[keypoints['top']], mesh.vertices[keypoints['right']], 10)
+        top_edge = sample_line_segment(mesh, mesh.vertices[keypoints['top']], mesh.vertices[keypoints['right']])
 
         # Sample points on the left edge
-        left_edge = sample_line_segment(mesh, mesh.vertices[keypoints['right']], mesh.vertices[keypoints['base']], 10)
+        left_edge = sample_line_segment(mesh, mesh.vertices[keypoints['right']], mesh.vertices[keypoints['base']])
 
         # Sample points on the bottom edge
-        bottom_edge = sample_line_segment(mesh, mesh.vertices[keypoints['base']], mesh.vertices[keypoints['left']], 10)
+        bottom_edge = sample_line_segment(mesh, mesh.vertices[keypoints['base']], mesh.vertices[keypoints['left']])
 
         # Sample points on the right edge
-        right_edge = sample_line_segment(mesh, mesh.vertices[keypoints['left']], mesh.vertices[keypoints['top']], 10)
+        right_edge = sample_line_segment(mesh, mesh.vertices[keypoints['left']], mesh.vertices[keypoints['top']])
 
         # Stack all points together
         keypoints_samples = np.concatenate((top_edge, left_edge, bottom_edge, right_edge))
@@ -242,6 +250,7 @@ class LeafRegistration():
     def ARAP_rigistration(self,target_path, template_path):
         template = trimesh.load_mesh(template_path)
         template = self.raw_to_canonical(template)  
+        template = self.ICP_rigid_registration(template_path,target_path)
         template.fill_holes()
         target = trimesh.load_mesh(target_path)
         target = self.raw_to_canonical(target)
@@ -250,19 +259,22 @@ class LeafRegistration():
         pca_target = self.find_pca(target)
         keypoints_temp = self.find_keypoints(template,pca_temp)
         keypoints_target = self.find_keypoints(target,pca_target)
+        template_contour = self.get_boundary(template)
+        target_contour = self.get_boundary(target)
         correspondence = self.get_correspondence(template, target, keypoints_temp, keypoints_target)
         # boundary_temp = self.get_boundary(template)
         keypoints_temp_up  = self.sampling_keypoints(template, keypoints_temp)
         #keypoints_temp_up = np.unique(keypoints_temp_up)
         keypoints_target_up  = self.sampling_keypoints(target, correspondence)
-        keypoints_temp_up_surf = icp_correspondence(template.vertices, keypoints_temp_up)
-        keypoints_target_up_surf = icp_correspondence(target.vertices, keypoints_target_up)
-        #keypoints_target_up = np.unique(keypoints_target_up)
+        keypoints_temp_up_surf = icp_correspondence(template.vertices, keypoints_temp_up, None)
+        keypoints_target_up_surf = icp_correspondence(target.vertices, keypoints_target_up, None)
+        # keypoints_target_surf = np.unique(keypoints_target_up_surf)
+        # keypoints_template_surf = np.unique(keypoints_temp_up_surf)
         # keypoints_target_up = icp_correspondence(template.vertices[keypoints_temp_up], target.vertices[keypoints_target_up])
         # show_mesh(template, template.vertices[keypoints_temp_up_surf])
         # show_mesh(target, target.vertices[keypoints_target_up_surf])
-        #compare_mesh(template, keypoints_temp, target, keypoints_target)
-        #compare_mesh(template, keypoints_temp_up_surf, target, keypoints_target_up_surf)
+
+        compare_mesh(template, keypoints_temp_up_surf, target, keypoints_target_up_surf)
         # Use libigl to perform non-rigid deformation
         v, f = template.vertices, template.faces
 
@@ -279,9 +291,19 @@ class LeafRegistration():
         # Perform ARAP deformation
         vn = arap.solve(bc, v)
         deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f)
-        compare_mesh(deformed_mesh, keypoints_temp_up_surf, target, keypoints_target_up_surf)
+       #  compare_mesh(deformed_mesh, keypoints_temp_up_surf, target, keypoints_target_up_surf)
         return deformed_mesh
     
+    def ICP_rigid_registration(self, template_path,target_path):
+        target = trimesh.load_mesh(target_path)
+        template = trimesh.load_mesh(template_path)
+        template = self.raw_to_canonical(template)
+        target = self.raw_to_canonical(target)
+        aligned_mesh =template.copy()
+        transform, cost = trimesh.registration.mesh_other(template, target, samples=100,
+                                                          icp_first=10,icp_final=50,scale=False, return_cost=True)
+        aligned_mesh.apply_transform(transform)
+        return aligned_mesh
 
 if __name__ == '__main__':
     root_dir = 'dataset/LeafData'
@@ -289,10 +311,11 @@ if __name__ == '__main__':
     all_species = registrater.species
     spc0 = registrater.get_species_mesh(all_species[0])
     spc0.sort()
-    target = 'dataset/ScanData/raw_scan/id1/id1_1.obj'
-    # template = 'dataset/ScanData/red/Leaf_red.001.obj'
-    template = '/home/yang/projects/parametric-leaf/dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
-    registrater.ARAP_rigistration(target, template)
+    #target = 'dataset/ScanData/maple/Autumn_maple_leaf.003.obj'
+    target  = 'dataset/ScanData/yellow/Leaf_yellow.002.obj'
+    template = 'dataset/ScanData/yellow/Leaf_yellow.001.obj'
+   # template = 'dataset/ScanData/maple/Autumn_maple_leaf.002.obj'
+    deform =registrater.ARAP_rigistration(target, template)
     pass
     
     
