@@ -10,6 +10,8 @@ from scipy.spatial import cKDTree
 from matplotlib import pyplot as plt
 import igl
 import csv
+import torch
+from pytorch3d.loss import chamfer_distance
 
 def show_contour(mesh, keypoints):
     fig = plt.figure()
@@ -17,7 +19,7 @@ def show_contour(mesh, keypoints):
     ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2], triangles=mesh.faces, color='gray', alpha=0.6)
     for i,idx in enumerate(keypoints):
         point = mesh.vertices[idx]
-        if i%10==0:
+        if i%1==0:
             ax.scatter3D(point[0], point[1], point[2], c='red', s=5)
             ax.text(point[0], point[1], point[2], str(i), fontsize=10, color='black')
 
@@ -33,7 +35,7 @@ def show_mesh(mesh, keypoints):
     for key,idx in keypoints.items():
         point = mesh.vertices[idx]
         ax.scatter3D(point[0], point[1], point[2], c='red', s=5)
-        ax.text(point[0], point[1], point[2], key, fontsize=5, color='black')
+        ax.text(point[0], point[1], point[2], key, fontsize=10, color='black')
 
     ax.set_xlim([-0.5, 0.5])
     ax.set_ylim([-0.5, 0.5])
@@ -42,18 +44,27 @@ def show_mesh(mesh, keypoints):
 
 def icp_correspondence(template, target, template_contour):
     # 使用子集构建KDTree
-    tree = cKDTree(template[template_contour])
     
-    # 创建一个映射，将KDTree索引映射回原始template的索引
-    index_mapping = {i: original_idx for i, original_idx in enumerate(template_contour)}
-    
-    idx_list = []
-    for pts in target:
-        _, idx = tree.query(pts)
-        # 使用映射找到原始的索引
-        original_index = index_mapping[idx]
-        idx_list.append(original_index)
-    return idx_list
+    if template_contour is None:
+        tree = cKDTree(template)
+        idx_list = []
+        for pts in target:
+            _, idx = tree.query(pts)
+            idx_list.append(idx)
+        return idx_list
+    else:
+        tree = cKDTree(template[template_contour])
+        
+        # 创建一个映射，将KDTree索引映射回原始template的索引
+        index_mapping = {i: original_idx for i, original_idx in enumerate(template_contour)}
+        
+        idx_list = []
+        for pts in target:
+            _, idx = tree.query(pts)
+            # 使用映射找到原始的索引
+            original_index = index_mapping[idx]
+            idx_list.append(original_index)
+        return idx_list
 
 def compare_keypoint(mesh1, keypoints1, mesh2, keypoints2):
     # Create a new figure and 3D axis
@@ -69,7 +80,7 @@ def compare_keypoint(mesh1, keypoints1, mesh2, keypoints2):
     for key,idx in keypoints1.items():
         point = mesh1.vertices[idx]
         ax.scatter3D(point[0], point[1], point[2], c=keypoint_color, s=5)
-        ax.text(point[0], point[1], point[2], key, fontsize=5, color='black')
+        ax.text(point[0], point[1], point[2], key, fontsize=10, color='black')
         
     # Plot the second mesh faces
     ax.plot_trisurf(mesh2.vertices[:, 0], mesh2.vertices[:, 1], mesh2.vertices[:, 2], triangles=mesh2.faces, color='lightblue', alpha=0.6)
@@ -105,7 +116,7 @@ def compare_mesh(mesh1, keypoints1, mesh2, keypoints2):
 
     # Plot keypoints for the first mesh
     for i,idx in enumerate(keypoints1):
-        if idx % 10 == 0:
+        if idx % 1 == 0:
             point = mesh1.vertices[idx]
             ax.scatter3D(point[0], point[1], point[2], c=keypoint_color, s=5)
             ax.text(point[0], point[1], point[2], str(i), fontsize=5, color='black')
@@ -117,14 +128,14 @@ def compare_mesh(mesh1, keypoints1, mesh2, keypoints2):
     # Plot keypoints for the second mesh
     for j,idx in enumerate(keypoints2):
         point = mesh2.vertices[idx]    
-        if idx%10==0:
+        if idx%1==0:
             ax.scatter3D(point[0], point[1], point[2], c=keypoint_color, s=5)
             ax.text(point[0], point[1], point[2], str(j), fontsize=10, color='black')
 
 
     # Connect keypoints with same index from both meshes
     for idx1, idx2 in zip(keypoints1, keypoints2):
-        if idx1 % 10 == 0:
+        if idx1 % 1 == 0:
             point1 = mesh1.vertices[idx1]
             point2 = mesh2.vertices[idx2]
             ax.plot3D([point1[0], point2[0]], [point1[1], point2[1]], [point1[2], point2[2]], 'b-')
@@ -264,7 +275,7 @@ class LeafRegistration():
         # Helper function to sample points on a line segment
     
     def sampling_keypoints(self,mesh, keypoints):
-        def sample_line_segment(mesh, start, end, n_samples=24):
+        def sample_line_segment(mesh, start, end, n_samples=5):
             pts = np.linspace(start, end, n_samples)[:-1]
             # find nearest point on surface and return mesh vertex index
             # idx =icp_correspondence(template=mesh.vertices, target=pts)
@@ -286,21 +297,24 @@ class LeafRegistration():
         keypoints_samples = np.concatenate((top_edge, left_edge, bottom_edge, right_edge))
         return keypoints_samples
      
-    def ARAP_rigistration(self,target_path):
+    def ARAP_rigistration(self,target_path, template_path):
+        #template  = trimesh.load_mesh(template_path)
         template = self.raw_to_canonical(self.template)  
         template.fill_holes()
-        #template = self.ICP_rigid_registration(target_path)
+        template = self.ICP_rigid_registration(target_path)
         target = trimesh.load_mesh(target_path)
         target = self.raw_to_canonical(target)
         target.fill_holes()
         pca_target = self.find_pca(target)
+        pca_template = self.find_pca(template)
+        keypoints_temp = self.find_keypoints(template,pca_template)
         keypoints_target = self.find_keypoints(target,pca_target)
-        keypoints_temp = {
-            'top':self.vertex_info['top'][0],
-            'base':self.vertex_info['base'][0],
-            'left':self.vertex_info['left'][0],
-            'right':self.vertex_info['right'][0]
-        }
+        # keypoints_temp = {
+        #     'top':self.vertex_info['top'][0],
+        #     'base':self.vertex_info['base'][0],
+        #     'left':self.vertex_info['left'][0],
+        #     'right':self.vertex_info['right'][0]
+        # }
         template_contour = self.vertex_info['contour']
         # get boundary index of target mesh
         target_contour = self.get_boundary(target)
@@ -310,15 +324,18 @@ class LeafRegistration():
         keypoints_temp_up = self.sampling_keypoints(template, keypoints_temp)
         keypoints_target_surf = icp_correspondence(target.vertices, keypoints_target_up, template_contour=target_contour)        
         keypoints_temp_surf = icp_correspondence(template.vertices, keypoints_temp_up, template_contour=template_contour)
+        # keypoints_target_surf = icp_correspondence(template.vertices[keypoints_temp_surf], 
+        #                                            target.vertices[keypoints_target_surf],None)        
+        
         # find correspondence
         # show_mesh(template, keypoints_temp)
-        # show_mesh(target, keypoints_target)
+        #show_contour(target, keypoints_target_up)
         # compare_keypoint(template, keypoints_temp, target, keypoints_target)
         
-        # show contour
+        # # # show contour
         # show_contour(template, keypoints_temp_surf)
         # show_contour(target, keypoints_target_surf)    
-       #  compare_mesh(template, template_contour, target, keypoints_target_surf)
+        # compare_mesh(template, template_contour, target, keypoints_target_surf)
         
         
         # Use libigl to perform non-rigid deformation
@@ -326,7 +343,7 @@ class LeafRegistration():
 
 
         # Define the anchor positions
-        b = np.array(template_contour)
+        b = np.array(keypoints_temp_surf)
 
         # Precompute ARAP (assuming 3D vertices)
         arap = igl.ARAP(v, f, 3, b)
@@ -336,8 +353,33 @@ class LeafRegistration():
 
         # Perform ARAP deformation
         vn = arap.solve(bc, v)
-        deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f)
+        deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f) # template
         # compare_mesh(deformed_mesh, template_contour, target, keypoints_target_surf)
+        
+        # fine_tune by optimizing chamfer distance between deformed mesh and target
+        # define the chamfer distance function
+        optimization = True
+        if optimization:
+            device = torch.device("cuda:0")
+            delta_x = np.zeros_like(deformed_mesh.vertices)
+            delta_x = torch.from_numpy(delta_x).float().to(device).requires_grad_(True)
+            optimizer = torch.optim.Adam([delta_x], lr=0.0005)        
+
+            for i in range(500):
+                optimizer.zero_grad()
+                # vertice to tensor
+                deformed_mesh_vertices = torch.from_numpy(np.array(deformed_mesh.vertices)).float().to(device)
+                deform_vert =deformed_mesh_vertices + delta_x
+                # error untimeError: expected scalar type Float but found Double
+                
+                chamfer =chamfer_distance(deform_vert.unsqueeze(0).float(), torch.from_numpy(np.array(target.vertices)).unsqueeze(0).float().to(device))
+                loss = chamfer[0]
+                loss.backward()
+                optimizer.step()
+                print(loss)
+            deform_vert =deformed_mesh_vertices + delta_x
+            deformed_mesh.vertices = deform_vert.cpu().detach().numpy()
+            deformed_mesh = trimesh.Trimesh(vertices=deformed_mesh.vertices, faces=f)
         return deformed_mesh
     
     def ICP_rigid_registration(self, target_path):
@@ -356,6 +398,7 @@ if __name__ == '__main__':
     template = 'dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
     vertex_info = 'dataset/vertex.csv'
     registrater  =LeafRegistration(root_dir, template, vertex_info)
-    target = 'dataset/ScanData/yellow/Leaf_yellow.003.obj'
-    registrater.ARAP_rigistration(target)
+    #target = 'dataset/ScanData/raw_scan/id1/id1_g2.003.obj'
+    target = 'dataset/ScanData/yellow/Leaf_yellow.001.obj'
+    registrater.ARAP_rigistration(target, template)
     #registrater.ICP_rigid_registration(target)
