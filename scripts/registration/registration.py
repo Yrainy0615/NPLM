@@ -12,6 +12,28 @@ import igl
 import csv
 import torch
 from pytorch3d.loss import chamfer_distance
+from pytorch3d.renderer import (
+    look_at_view_transform,
+    FoVPerspectiveCameras, 
+    PointLights, 
+    DirectionalLights, 
+    Materials, 
+    RasterizationSettings, 
+    MeshRenderer, 
+    MeshRasterizer,  
+    SoftPhongShader,
+    blending,
+    Textures
+)
+from pytorch3d.structures import Meshes
+from pytorch3d.loss import mesh_laplacian_smoothing
+
+def silhouette_loss(predicted, target):
+    # 假设 predicted 和 target 都是二值图像，像素值为 0 或 1
+    intersection = (predicted * target).sum()
+    union = predicted.sum() + target.sum() - intersection
+    iou = intersection / union
+    return 1 - iou
 
 def show_contour(mesh, keypoints):
     fig = plt.figure()
@@ -171,6 +193,32 @@ class LeafRegistration():
         self.all_mesh = self.manager.get_all_mesh()
         self.template = trimesh.load_mesh(template)
         self.vertex_info = read_vertex_groups_from_csv(vertex_info)
+        # build renderer
+        R, t = look_at_view_transform(1, 90, 180)
+        R = torch.nn.Parameter(R)
+        t = torch.nn.Parameter(t)
+        self.device = torch.device("cuda:0")
+        lights = PointLights(device=self.device, location=[[0.0, 0.0, 1e5]],
+                            ambient_color=[[1, 1, 1]],
+                            specular_color=[[0., 0., 0.]], diffuse_color=[[0., 0., 0.]])
+        raster_settings = RasterizationSettings(
+            image_size=648,
+            blur_radius=0.0,
+            faces_per_pixel=1,)
+        cameras = FoVPerspectiveCameras(device=self.device, R=R, T=t)
+        blend_params = blending.BlendParams(background_color=[255, 255, 255])
+        self.renderer = MeshRenderer(
+        rasterizer=MeshRasterizer(
+            cameras=cameras,
+            raster_settings=raster_settings
+        ),
+        shader=SoftPhongShader(
+            device=self.device,
+            cameras=cameras,
+            lights=lights,
+            blend_params=blend_params
+        )
+    )
         
     def raw_to_canonical(self,mesh):
         t = -mesh.centroid
@@ -298,62 +346,63 @@ class LeafRegistration():
         return keypoints_samples
      
     def ARAP_rigistration(self,target_path, template_path):
-        #template  = trimesh.load_mesh(template_path)
-        template = self.raw_to_canonical(self.template)  
+        template  = trimesh.load_mesh(template_path)
+        #template = self.raw_to_canonical(self.template)  
         template.fill_holes()
-        template = self.ICP_rigid_registration(target_path)
+        #template = self.ICP_rigid_registration(target_path)
         target = trimesh.load_mesh(target_path)
-        target = self.raw_to_canonical(target)
+       # target = self.raw_to_canonical(target)
         target.fill_holes()
-        pca_target = self.find_pca(target)
-        pca_template = self.find_pca(template)
-        keypoints_temp = self.find_keypoints(template,pca_template)
-        keypoints_target = self.find_keypoints(target,pca_target)
-        # keypoints_temp = {
-        #     'top':self.vertex_info['top'][0],
-        #     'base':self.vertex_info['base'][0],
-        #     'left':self.vertex_info['left'][0],
-        #     'right':self.vertex_info['right'][0]
-        # }
-        template_contour = self.vertex_info['contour']
-        # get boundary index of target mesh
-        target_contour = self.get_boundary(target)
-        keypoints_target = self.get_correspondence(template, target, keypoints_temp, keypoints_target)
-        
-        keypoints_target_up = self.sampling_keypoints(target, keypoints_target)
-        keypoints_temp_up = self.sampling_keypoints(template, keypoints_temp)
-        keypoints_target_surf = icp_correspondence(target.vertices, keypoints_target_up, template_contour=target_contour)        
-        keypoints_temp_surf = icp_correspondence(template.vertices, keypoints_temp_up, template_contour=template_contour)
-        # keypoints_target_surf = icp_correspondence(template.vertices[keypoints_temp_surf], 
-        #                                            target.vertices[keypoints_target_surf],None)        
-        
-        # find correspondence
-        # show_mesh(template, keypoints_temp)
-        #show_contour(target, keypoints_target_up)
-        # compare_keypoint(template, keypoints_temp, target, keypoints_target)
-        
-        # # # show contour
-        # show_contour(template, keypoints_temp_surf)
-        # show_contour(target, keypoints_target_surf)    
-        # compare_mesh(template, template_contour, target, keypoints_target_surf)
-        
-        
-        # Use libigl to perform non-rigid deformation
-        v, f = template.vertices, template.faces
+        deformed_mesh = template.copy()
+        arap = False
+        if arap:
+            pca_target = self.find_pca(target)
+            pca_template = self.find_pca(template)
+            keypoints_temp = self.find_keypoints(template,pca_template)
+            keypoints_target = self.find_keypoints(target,pca_target)
+            keypoints_temp = {
+                'top':self.vertex_info['top'][0],
+                'base':self.vertex_info['base'][0],
+                'left':self.vertex_info['left'][0],
+                'right':self.vertex_info['right'][0]
+            }
+            # template_contour = self.get_boundary(template)
+            template_contour = self.vertex_info['contour']
+            # get boundary index of target mesh
+            target_contour = self.get_boundary(target)
+            keypoints_target = self.get_correspondence(template, target, keypoints_temp, keypoints_target)
+            
+            keypoints_target_up = self.sampling_keypoints(target, keypoints_target)
+            keypoints_temp_up = self.sampling_keypoints(template, keypoints_temp)
+            keypoints_target_surf = icp_correspondence(target.vertices, keypoints_target_up, template_contour=target_contour)        
+            #keypoints_target_surf = icp_correspondence(template.vertices, keypoints_target_up, template_contour=template_contour)
+            keypoints_temp_surf = icp_correspondence(template.vertices, keypoints_temp_up, template_contour=template_contour)
+            # find correspondence
+            # show_mesh(template, keypoints_temp)
+            #show_contour(target, keypoints_target_up)
+            # compare_keypoint(template, keypoints_temp, target, keypoints_target)
+            
+            # # # show contour
+            # show_contour(template, keypoints_temp_surf)
+            # show_contour(target, keypoints_target_surf)    
+            # compare_mesh(template, template_contour, target, keypoints_target_surf)
+
+            # Use libigl to perform non-rigid deformation
+            v, f = template.vertices, template.faces
 
 
-        # Define the anchor positions
-        b = np.array(keypoints_temp_surf)
+            # Define the anchor positions
+            b = np.array(keypoints_temp_surf)
 
-        # Precompute ARAP (assuming 3D vertices)
-        arap = igl.ARAP(v, f, 3, b)
+            # Precompute ARAP (assuming 3D vertices)
+            arap = igl.ARAP(v, f, 3, b)
 
-        # Set the positions of anchors in the target to their corresponding positions
-        bc = np.array([target.vertices[i] for i in keypoints_target_surf])
+            # Set the positions of anchors in the target to their corresponding positions
+            bc = np.array([target.vertices[i] for i in keypoints_target_surf])
 
-        # Perform ARAP deformation
-        vn = arap.solve(bc, v)
-        deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f) # template
+            # Perform ARAP deformation
+            vn = arap.solve(bc, v)
+            deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f) # template
         # compare_mesh(deformed_mesh, template_contour, target, keypoints_target_surf)
         
         # fine_tune by optimizing chamfer distance between deformed mesh and target
@@ -365,7 +414,7 @@ class LeafRegistration():
             delta_x = torch.from_numpy(delta_x).float().to(device).requires_grad_(True)
             optimizer = torch.optim.Adam([delta_x], lr=0.0005)        
 
-            for i in range(500):
+            for i in range(1000):
                 optimizer.zero_grad()
                 # vertice to tensor
                 deformed_mesh_vertices = torch.from_numpy(np.array(deformed_mesh.vertices)).float().to(device)
@@ -373,21 +422,31 @@ class LeafRegistration():
                 # error untimeError: expected scalar type Float but found Double
                 
                 chamfer =chamfer_distance(deform_vert.unsqueeze(0).float(), torch.from_numpy(np.array(target.vertices)).unsqueeze(0).float().to(device))
-                loss = chamfer[0]
+                # use pytorch3d add a rerendering loss
+                render_template = self.renderer.rasterizer(Meshes(verts=deform_vert.unsqueeze(0), faces=torch.from_numpy(np.array(deformed_mesh.faces)).unsqueeze(0).to(device)))
+                render_target = self.renderer.rasterizer(Meshes(verts=torch.from_numpy(np.array(target.vertices)).unsqueeze(0).float().to(device), faces=torch.from_numpy(np.array(target.faces)).unsqueeze(0).float().to(device)))
+                mask_template = render_template.pix_to_face != -1 
+                mask_target = render_target.pix_to_face != -1 
+                mask_template = mask_template.detach().squeeze(0).squeeze(-1).float()
+                mask_target = mask_target.detach().squeeze(0).squeeze(-1).float()
+                # add a laplacian smoothness loss us pytorch3d
+                loss_lap = mesh_laplacian_smoothing(Meshes(deform_vert.unsqueeze(0), torch.from_numpy(np.array(deformed_mesh.faces)).unsqueeze(0).to(device)))
+                loss_iou = silhouette_loss(mask_template, mask_target)
+                loss = chamfer[0]* 500*+ loss_iou*3 + loss_lap*10
                 loss.backward()
                 optimizer.step()
-                print(loss)
+                print(f'loss_lap:{loss_lap}, loss_iou:{loss_iou}, chamfer:{chamfer[0]}')
             deform_vert =deformed_mesh_vertices + delta_x
             deformed_mesh.vertices = deform_vert.cpu().detach().numpy()
-            deformed_mesh = trimesh.Trimesh(vertices=deformed_mesh.vertices, faces=f)
+            deformed_mesh = trimesh.Trimesh(vertices=deformed_mesh.vertices, faces=deformed_mesh.faces)
         return deformed_mesh
     
     def ICP_rigid_registration(self, target_path):
         target = trimesh.load_mesh(target_path)
         template = self.raw_to_canonical(self.template)
         target = self.raw_to_canonical(target)
-        aligned_mesh =template.copy()
-        transform, cost = trimesh.registration.mesh_other(template, target, samples=100,
+        aligned_mesh =target.copy()
+        transform, cost = trimesh.registration.mesh_other(target, template, samples=100,
                                                           icp_first=10,icp_final=50,scale=False, return_cost=True)
         aligned_mesh.apply_transform(transform)
         return aligned_mesh
@@ -395,10 +454,23 @@ class LeafRegistration():
 
 if __name__ == '__main__':
     root_dir = 'dataset/LeafData'
-    template = 'dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
+    # template = 'dataset/LeafData/Jamun/healthy/Jamun_healthy_0019.obj'
+    template = 'dataset/ScanData/canonical/yellow_canonical.obj'
+
     vertex_info = 'dataset/vertex.csv'
+
+    mesh_dir = 'dataset/ScanData/yellow'
+    #template = 'dataset/ScanData/yellow/Leaf_yellow.001.obj'  
     registrater  =LeafRegistration(root_dir, template, vertex_info)
-    #target = 'dataset/ScanData/raw_scan/id1/id1_g2.003.obj'
-    target = 'dataset/ScanData/yellow/Leaf_yellow.001.obj'
-    registrater.ARAP_rigistration(target, template)
-    #registrater.ICP_rigid_registration(target)
+    dirs = os.listdir(mesh_dir)
+    for dir in dirs:
+        filename = os.path.join(mesh_dir, dir)
+        if '.obj' in filename:
+            print(filename)
+            aligned_mesh = registrater.ARAP_rigistration(filename, template)
+            #aligned_mesh = registrater.ICP_rigid_registration(filename)
+            #aligned_mesh.export(filename)
+            aligned_mesh.export(filename[:-4]+'_aligned.obj')
+    
+
+    pass
