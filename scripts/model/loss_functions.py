@@ -5,8 +5,6 @@ from scripts.model.diff_operators import gradient
 
 
 def compute_loss(batch, decoder, latent_idx, latent_spc, device):
-    if 'path' in batch:
-        del batch['path']
     batch_cuda_npm = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
 
     idx = batch.get('idx').to(device)

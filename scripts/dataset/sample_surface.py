@@ -30,21 +30,22 @@ def sample_surface(mesh, n_samps, viz=False):
     
 
 def run_species(manager):
-    all_species = manager.get_all_species()
+    all_neutral = manager.get_all_neutral()
     
-    for species in all_species:
-        neutral_id = manager.get_neutral_pose(species)
-        
+    for neutral in all_neutral:
+        #neutral_id = manager.get_neutral_pose(neutral)
+        neutral_name = os.path.splitext(os.path.basename(neutral))[0]
+        neutral_name = neutral_name.split('_')[0]
         # sample surface points from neural
-        neutral_filename = manager.get_neutral_path() + neutral_id + '.obj'
-        neutral_mesh = manager.load_mesh(neutral_filename)
-        result = sample_surface(neutral_mesh, n_samps=2500000)
-        out_dir = manager.get_train_shape_path()
+    
+        neutral_mesh = manager.load_mesh(neutral)
+        result = sample_surface(neutral_mesh, n_samps=250000)
+        out_dir = os.path.join(manager.get_neutral_path(),'train_file')
         os.makedirs(out_dir, exist_ok=True)
-        np.save(os.path.join(out_dir,f"{neutral_id}_neutral.npy"), result)
+        np.save(os.path.join(out_dir,f"{neutral_name}_neutral.npy"), result)
         
         # sample surface points and deformation field of poses
-        poses = manager.get_poses(species)
+        
 
 def run_poses(manager):
     all_pose = manager.get_all_pose()
@@ -63,8 +64,8 @@ def run_poses(manager):
 
 
 if __name__ == "__main__":
-    root_path = '/home/yang/projects/parametric-leaf/dataset/leaf'
-    manager = LeafDataManager(root_path)
-    #run_species(manager)
-    run_poses(manager)
+    root_path = 'dataset/ScanData'
+    manager = LeafScanManager(root_path)
+    run_species(manager)
+    #run_poses(manager)
     

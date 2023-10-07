@@ -11,15 +11,23 @@ class LeafScanManager():
 
         
     def get_all_species(self):
-        return self.species_dirs
+        species = os.listdir(self.neutral_path)
+        name = [os.path.splitext(os.path.basename(specie))[0] for specie in species if '.obj' in specie]
+        species = [name.split('_')[0] for name in name]
+        return species
     
     def get_poses(self, species):
         species_path = os.path.join(self.root_path, species)
         poses = [pose for pose in os.listdir(species_path) if 'rigid' in pose]
         return sorted(poses)
     
+    def get_all_neutral(self):
+        neutral_fold = os.path.join(self.root_path, 'canonical')
+        nertral_list = [os.path.join(neutral_fold, file) for file in os.listdir(neutral_fold) if '.obj' in file]
+        return nertral_list
+    
     def get_neutral_pose(self, species):  
-        return  f"{species}_canonical_rigid"
+        return  f"{species}_canonical.obj"
     
     def get_neutral_path(self):
         return self.neutral_path
@@ -32,8 +40,8 @@ class LeafScanManager():
         return mesh
     
     def get_train_shape_file(self, species):
-        file_path = os.path.join(self.neutral_path,'train' )
-        filename = f"{species}_canonical_rigid_neutral.npy"
+        file_path = os.path.join(self.neutral_path,'train_file' )
+        filename = f"{species}_neutral.npy"
         train_file = os.path.join(file_path,filename)
         return train_file
     

@@ -16,8 +16,8 @@ import os
 import wandb
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--config',type=str, default='/home/yyang/projects/parametric-leaf/NPLM/scripts/configs/npm.yaml', help='config file')
-parser.add_argument('--mode', type=str, default='viz_shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
+parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
+parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
 parser.add_argument('--gpu', type=int, default=0, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 # setting
@@ -28,8 +28,8 @@ CFG = yaml.safe_load(open(args.config, 'r'))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.mode == "shape":
-        # wandb.init(project='NPLM', name =args.wandb)
-        trainset = LeafImageDataset(mode='train',
+        wandb.init(project='NPLM', name =args.wandb)
+        trainset = LeafShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                             batch_size=CFG['training']['batch_size'],
@@ -44,8 +44,15 @@ if args.mode == "shape":
             )
 
         decoder = decoder.to(device)
-        trainer = ShapeTrainer(decoder, CFG, trainloader, device)
+        trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device)
         trainer.train(30001)
+    
+    
+
+    
+    
+    
+    
     
 if args.mode == "viz_shape":
         trainset = LeafImageDataset(mode='train',

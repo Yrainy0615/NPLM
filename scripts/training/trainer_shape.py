@@ -8,20 +8,21 @@ import numpy as np
 import wandb
 
 class ShapeTrainer(object):
-    def __init__(self, decoder, cfg, trainloader,device):
+    def __init__(self, decoder, cfg, trainset,trainloader,device):
         self.decoder = decoder
-        self.latent_idx = torch.nn.Embedding(len(trainloader), decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
+        self.cfg = cfg['training']
+        self.latent_idx = torch.nn.Embedding(len(trainset), decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
             self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )
-        num_species = 5
+        num_species = self.cfg['num_species']
         self.latent_spc = torch.nn.Embedding(num_species,  decoder.lat_dim//2,max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
             self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )
         self.combined_params = list(self.latent_idx.parameters()) + list(self.latent_spc.parameters())
-  
-        self.cfg = cfg['training']
+        self.trainloader = trainloader
+
         self.device = device
         self.optimizer_decoder = optim.AdamW(params=list(decoder.parameters()),
                                              lr = self.cfg['lr'],
@@ -29,7 +30,7 @@ class ShapeTrainer(object):
         self.optimizer_latent = optim.SparseAdam(params= self.combined_params, lr=self.cfg['lr_lat'])
         self.lr = self.cfg['lr']
         self.lr_lat = self.cfg['lr_lat']
-        self.trainloader = trainloader
+
         self.checkpoint_path = self.cfg['save_path']
         
     def load_checkpoint(self):

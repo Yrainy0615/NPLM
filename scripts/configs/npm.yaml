@@ -5,9 +5,10 @@ decoder:
 
 
 training:
-  root_dir: dataset/LeafData
-  save_path: /home/yang/projects/parametric-leaf/checkpoints
-  batch_size: 32
+  root_dir: dataset/ScanData
+  save_path: checkpoints
+  batch_size: 12
+  num_species: 12
   ckpt_interval: 5000
   grad_clip: 0.1
   grad_clip_lat: 0.1

@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from .DataManager import LeafScanManager, LeafImageManger
+from .DataManager import LeafScanManager
 from typing import Literal
 import os
 import yaml
@@ -38,23 +38,26 @@ class LeafShapeDataset(Dataset):
         self.n_supervision_points_face = n_supervision_points_face
         self.n_supervision_points_non_face  = n_supervision_points_non_face
         self.sigma_near = sigma_near
-        self.all_pose = self.manager.get_all_pose()
+        self.all_neutral = self.manager.get_all_neutral()
+        # create a dictionary to map species to index
+        self.species_to_idx = {species:idx for idx, species in enumerate(self.all_species)}
         
     def __len__(self):
         #return len([f for f in os.listdir(self.manager.get_neutral_path()) if f.endswith('.obj')])
-        return len(self.all_pose)
+        return len(self.all_species)
     
     def __getitem__(self, index):
-        #species = self.all_species[index]
-        (k ,v) , = self.all_pose[index].items()
-        # train_file = np.load(self.manager.get_train_shape_file(species), allow_pickle=True)
-        train_file = np.load(self.manager.get_train_pose_file(k,v), allow_pickle=True)
+        neutral = self.all_neutral[index]
+        species = os.path.splitext(os.path.basename(neutral))[0]
+        species = species.split('_')[0]
+        train_file = np.load(self.manager.get_train_shape_file(species), allow_pickle=True)
+        #train_file = np.load(self.manager.get_train_pose_file(spe), allow_pickle=True)
         points = train_file.item()['points']
         normals = train_file.item()['normals']
         #mesh_path = os.path.join(self.manager.get_neutral_path(),self.manager.get_neutral_pose(species))
-        mesh_file = self.manager.mesh_from_npy_file(self.manager.get_train_pose_file(k,v))
+        
         #mesh_file = mesh_path + '.obj'
-        mesh = self.manager.load_mesh(mesh_file)
+        mesh = self.manager.load_mesh(neutral)
         # subsample points for supervision
         sup_idx = np.random.randint(0, points.shape[0], self.n_supervision_points_face)
         sup_points = points[sup_idx,:]
@@ -70,7 +73,8 @@ class LeafShapeDataset(Dataset):
                     'sup_grad_far': sup_grad_far,
                     'sup_grad_near': sup_grad_near,
                     'sup_grad_near_udf': sup_grad_near_udf,
-                    'idx': np.array([index])}
+                    'idx': np.array([index]),
+                    'species': self.species_to_idx[species]}
         return ret_dict
 
 
@@ -115,15 +119,14 @@ class LeafImageDataset(Dataset):
         
      
 if __name__ == "__main__":
-    cfg_path = '/home/yang/projects/parametric-leaf/NPLM/scripts/configs/npm.yaml'
+    cfg_path ='NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
-    dataset = LeafImageDataset(mode='train',
+    dataset = LeafShapeDataset(mode='train',
                                n_supervision_points_face=CFG['training']['npoints_decoder'],
                                n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                                batch_size=CFG['training']['batch_size'],
                                sigma_near=CFG['training']['sigma_near'],
                                root_dir=CFG['training']['root_dir'])
     
-    dataloader = DataLoader(dataset, batch_size=2,shuffle=False, num_workers=2)
+    dataloader = DataLoader(dataset, batch_size=12,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))
-    pass
