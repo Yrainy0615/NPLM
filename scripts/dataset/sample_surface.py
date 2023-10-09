@@ -1,5 +1,5 @@
 import sys
-from .DataManager import LeafScanManager
+from DataManager import LeafScanManager
 import point_cloud_utils as pcu
 import pyvista as pv
 import trimesh
@@ -8,7 +8,7 @@ import os
 from matplotlib import pyplot as plt
 import numpy as np
 
-def sample_surface(mesh, n_samps, viz=False):
+def sample_surface(mesh, n_samps, viz=True):
     verts = mesh.vertex_data.positions
     faces = mesh.face_data.vertex_ids
     normal = pcu.estimate_mesh_vertex_normals(verts, faces)
@@ -52,7 +52,7 @@ def run_poses(manager):
     for pose in all_pose:
         (k ,v) , = pose.items()
         mesh = manager.load_mesh(v)
-        result = sample_surface(mesh, n_samps=2500000)
+        result = sample_surface(mesh, n_samps=250000)
         species_dir = manager.get_species_path(k)
         output_dir = os.path.join(species_dir,'train')
         if not os.path.exists(output_dir):

@@ -2,12 +2,13 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from .DataManager import LeafScanManager
+from DataManager import LeafScanManager
 from typing import Literal
 import os
 import yaml
 import igl
-from .sample_surface import sample_surface
+from sample_surface import sample_surface
+import trimesh
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)
@@ -118,10 +119,48 @@ class LeafImageDataset(Dataset):
         return ret_dict
         
      
+
+class LeafPoseDataset(Dataset):
+    def __init__(self,
+                 mode: Literal['train','val'],
+                 n_supervision_points_face: int,
+                 n_supervision_points_non_face: int,
+                 batch_size: int,
+                 sigma_near: float,
+                 root_dir: str):
+        self.manager = LeafScanManager(root_dir)
+        self.mode = mode
+        self.all_species = self.manager.get_all_species()
+        self.n_supervision_points_face = n_supervision_points_face
+        self.near_sigma = sigma_near
+        self.all_neutral = self.manager.get_all_neutral()
+        test_pose =os.listdir('dataset/ScanData/id2')
+        self.all_posed = [os.path.join('dataset/ScanData/id2',f) for f in test_pose]
+        
+    def __len__(self):
+        return len(self.all_posed)     
+    
+    def __getitem__(self, index):
+        pose_file = self.all_posed[index]
+        neutral_file = self.all_posed[0]
+        neutral_mesh = trimesh.load(neutral_file)
+        pose_mesh = trimesh.load(pose_file)
+        # subsample points for supervision
+        points_mesh = sample_surface(pose_mesh,n_samps=self.n_supervision_points_face)
+        flow_vec = pose_mesh.vertices - neutral_mesh.vertices
+        
+        
+        return None
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
-    dataset = LeafShapeDataset(mode='train',
+    # dataset = LeafShapeDataset(mode='train',
+    #                            n_supervision_points_face=CFG['training']['npoints_decoder'],
+    #                            n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
+    #                            batch_size=CFG['training']['batch_size'],
+    #                            sigma_near=CFG['training']['sigma_near'],
+    #                            root_dir=CFG['training']['root_dir'])
+    dataset = LeafPoseDataset(mode='train',
                                n_supervision_points_face=CFG['training']['npoints_decoder'],
                                n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                                batch_size=CFG['training']['batch_size'],
@@ -130,3 +169,4 @@ if __name__ == "__main__":
     
     dataloader = DataLoader(dataset, batch_size=12,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))
+    pass

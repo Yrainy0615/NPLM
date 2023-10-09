@@ -14,7 +14,7 @@ class DeepSDF(nn.Module):
             radius_init=1,
             beta=100,
             out_dim=1,
-            num_freq_bands=None,
+            num_freq_bands=1,
             input_dim=3,
     ):
         super().__init__()
@@ -74,7 +74,7 @@ class DeepSDF(nn.Module):
             inp = torch.cat([pos_embed, lat_rep], dim=-1)
         else:
             inp = torch.cat([xyz, lat_rep], dim=-1)
-        x = inp  # [b, n, 3+lat_dim=3+512=515]
+        x = inp
 
         for layer in range(0, self.num_layers - 1):
             lin = getattr(self, "lin" + str(layer))
@@ -87,7 +87,8 @@ class DeepSDF(nn.Module):
             if layer < self.num_layers - 2:
                 x = self.activation(x)
 
-        return x, None  # x[batch, n_points, 1]
+        return x, None
+
 
 
 def sample_point_feature(q, p, fea, var=0.1**2, background=False):

@@ -6,9 +6,8 @@ decoder:
 
 training:
   root_dir: dataset/ScanData
-  save_path: checkpoints
-  batch_size: 12
-  num_species: 12
+  save_path: checkpoints/
+  batch_size: 1
   ckpt_interval: 5000
   grad_clip: 0.1
   grad_clip_lat: 0.1

@@ -15,6 +15,8 @@ import pyvista as pv
 import os
 import wandb
 
+
+
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
 parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
 parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
@@ -55,7 +57,7 @@ if args.mode == "shape":
     
     
 if args.mode == "viz_shape":
-        trainset = LeafImageDataset(mode='train',
+        trainset = LeafShapeDataset(mode='train',
                         n_supervision_points_face=CFG['training']['npoints_decoder'],
                         n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                         batch_size=CFG['training']['batch_size'],
@@ -71,7 +73,7 @@ if args.mode == "viz_shape":
         def generate_random_latent(device):
                 return torch.normal(mean=0, std=0.1/math.sqrt(512), size=(512,)).to(device)
 
-        checkpoint = torch.load('/home/yyang/projects/parametric-leaf/checkpointscheckpoint_epoch_0.tar')
+        checkpoint = torch.load('checkpointscheckpoint_epoch_30000.tar')
         decoder.load_state_dict(checkpoint['decoder_state_dict'])
         decoder.eval()
         step =0
@@ -87,36 +89,30 @@ if args.mode == "viz_shape":
         #lat_mean = torch.from_numpy(np.load('dataset/npm_lat_mean.npy'))
         lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
         lat_spc_all = checkpoint['latent_spc_state_dict']['weight']
-        lat_mean = torch.mean(lat_all,dim=0).to(device)
-        lat_std = torch.std(lat_all, dim=0).to(device)        
-        alphs = torch.linspace(0,1, steps=10).cuda()
-        interpolate = (1-alphs[:, None]) * lat_all[4] + alphs[:, None] * lat_all[5]
+        lat_combined = torch.cat((lat_idx_all, lat_spc_all), dim=1)
+        # lat_mean = torch.mean(lat_all,dim=0).to(device)
+        # lat_std = torch.std(lat_all, dim=0).to(device)        
+        # alphs = torch.linspace(0,1, steps=10).cuda()
+        # interpolate = (1-alphs[:, None]) * lat_all[4] + alphs[:, None] * lat_all[5]
         # lat_std = torch.from_numpy(np.load('dataset/npm_lat_std.npy'))
-        for i in range(6):
-                #lat_rep = (torch.randn(lat_mean.shape).to(device) * lat_std * 0.85 + lat_mean).cuda()
-                alphs = torch.linspace(0,1, steps=10).cuda()
-                lat
-                interpolate = (1 - alphs[:, None]) * lat_all[i] + alphs[:, None] * lat_all[i+1]
-                for j in range(10):
-                        lat_rep = interpolate[j]
-                
-                #lat_rep = lat_all[i]
 
-                        logits = get_logits(decoder, lat_rep, grid_points=grid_points,nbatch_points=2000)
-                        print('starting mcubes')
-                        mesh = mesh_from_logits(logits, mini, maxi,256)
-                        print('done mcubes')
-                        pl = pv.Plotter(off_screen=True)
-                        pl.add_mesh(mesh)
-                        pl.reset_camera()
-                        pl.camera.position = (0, 3, 0)
-                        pl.camera.zoom(1.4)
-                        pl.set_viewup((0, 1, 0))
-                        pl.camera.view_plane_normal = (-0, -0, 1)
-                        pl.show(screenshot=out_dir + '/step_{:04d}.png'.format(step), auto_close=True)
-                        mesh.export(out_dir + '/mesh_{:04d}.ply'.format(step))
-                        #print(pl.camera)
-                        step += 1
+        for j in range(lat_combined.shape[0]):
+                lat_rep = lat_combined[j]
+                logits = get_logits(decoder, lat_rep, grid_points=grid_points,nbatch_points=2000)
+                print('starting mcubes')
+                mesh = mesh_from_logits(logits, mini, maxi,256)
+                print('done mcubes')
+                pl = pv.Plotter(off_screen=True)
+                pl.add_mesh(mesh)
+                pl.reset_camera()
+                pl.camera.position = (0, 3, 0)
+                pl.camera.zoom(1.4)
+                pl.set_viewup((0, 1, 0))
+                pl.camera.view_plane_normal = (-0, -0, 1)
+                pl.show(screenshot=out_dir + '/step_{:04d}.png'.format(step), auto_close=True)
+                mesh.export(out_dir + '/mesh_{:04d}.ply'.format(step))
+                #print(pl.camera)
+                step += 1
 
         
                 

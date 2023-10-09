@@ -11,23 +11,18 @@ class ShapeTrainer(object):
     def __init__(self, decoder, cfg, trainset,trainloader,device):
         self.decoder = decoder
         self.cfg = cfg['training']
-        self.latent_idx = torch.nn.Embedding(len(trainset), decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_idx = torch.nn.Embedding(len(trainloader), decoder.lat_dim, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
-            self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
+            self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim)
         )
-        num_species = self.cfg['num_species']
-        self.latent_spc = torch.nn.Embedding(num_species,  decoder.lat_dim//2,max_norm = 1.0, sparse=True, device = device).float()
-        torch.nn.init.normal_(
-            self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
-        )
-        self.combined_params = list(self.latent_idx.parameters()) + list(self.latent_spc.parameters())
+    
         self.trainloader = trainloader
 
         self.device = device
         self.optimizer_decoder = optim.AdamW(params=list(decoder.parameters()),
                                              lr = self.cfg['lr'],
                                              weight_decay= self.cfg['weight_decay'])
-        self.optimizer_latent = optim.SparseAdam(params= self.combined_params, lr=self.cfg['lr_lat'])
+        self.optimizer_latent = optim.SparseAdam(params= list(self.latent_idx.parameters()), lr=self.cfg['lr_lat'])
         self.lr = self.cfg['lr']
         self.lr_lat = self.cfg['lr_lat']
 
@@ -104,7 +99,7 @@ class ShapeTrainer(object):
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
                       #  'optimizer_lat_val_state_dict': self.optimizer_lat_val.state_dict(),
                         'latent_idx_state_dict': self.latent_idx.state_dict(),
-                        'latent_spc_state_dict': self.latent_spc.state_dict(),
+                  
                        # 'latent_codes_val_state_dict': self.latent_codes_val.state_dict()
                        },
                        path)
@@ -113,7 +108,7 @@ class ShapeTrainer(object):
         self.decoder.train()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
-        loss_dict = compute_loss(batch, self.decoder, self.latent_idx,self.latent_spc, self.device)
+        loss_dict = compute_loss(batch, self.decoder, self.latent_idx, self.device)
         loss_total = 0
         for key in loss_dict.keys():
             loss_total += self.cfg['lambdas'][key] * loss_dict[key]
@@ -124,7 +119,7 @@ class ShapeTrainer(object):
             torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
 
         if self.cfg['grad_clip_lat'] is not None:
-            torch.nn.utils.clip_grad_norm_(self.combined_params, max_norm=self.cfg['grad_clip_lat'])
+            torch.nn.utils.clip_grad_norm_(self.latent_idx.parameters(), max_norm=self.cfg['grad_clip_lat'])
         self.optimizer_decoder.step()
         self.optimizer_latent.step()
 
