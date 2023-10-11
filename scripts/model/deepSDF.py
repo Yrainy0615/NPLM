@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 from typing import Optional
 
-# decoder in DeepSDF for train npm
+# decoder in DeepSDF for train npmf
 class DeepSDF(nn.Module):
     def __init__(
             self,
@@ -14,7 +14,7 @@ class DeepSDF(nn.Module):
             radius_init=1,
             beta=100,
             out_dim=1,
-            num_freq_bands=1,
+            num_freq_bands=None,
             input_dim=3,
     ):
         super().__init__()
@@ -121,14 +121,14 @@ class DeformationNetwork(nn.Module):
     def __init__(
             self,
             mode,
-            lat_dim_expr,
+           lat_dim_expr,
             lat_dim_id,
             lat_dim_glob_shape,
             lat_dim_loc_shape,
             n_loc,
             anchors,
             hidden_dim,
-            nlayers=8,
+            nlayers=8, 
             out_dim=1,
             input_dim=3,
     ):

@@ -2,13 +2,14 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from DataManager import LeafScanManager
+from .DataManager import LeafScanManager
 from typing import Literal
 import os
 import yaml
 import igl
-from sample_surface import sample_surface
+from .sample_surface import sample_surface
 import trimesh
+import point_cloud_utils as pcu
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)
@@ -143,15 +144,21 @@ class LeafDeformDataset(Dataset):
     def __getitem__(self, index):
         pose_file = self.all_posed[index]
         neutral_file = self.all_posed[0]
-        neutral_mesh = trimesh.load(neutral_file)
-        pose_mesh = trimesh.load(pose_file)
+        neutral_mesh = trimesh.load_mesh(neutral_file)
+        pose_mesh = trimesh.load_mesh(pose_file)
+        pcu_neutral = self.manager.load_mesh(neutral_file)
         # subsample points for supervision
-        points_mesh = sample_surface(pose_mesh,n_samps=self.n_supervision_points_face)
+        sample = sample_surface(pcu_neutral,n_samps=self.n_supervision_points_face)
+        points =sample['points']
+        normals = sample['normals'] 
         flow_vec = pose_mesh.vertices - neutral_mesh.vertices
-        
-        
-        
-        return None
+
+        ret_dict = {'points': points,
+                    'normals': normals,
+                    'flow_vec': flow_vec,
+                    'idx': np.array([index])}
+        return ret_dict
+
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
