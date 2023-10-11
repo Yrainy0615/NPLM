@@ -7,7 +7,7 @@ decoder:
 training:
   root_dir: dataset/ScanData
   save_path: checkpoints/
-  batch_size: 6
+  batch_size: 1
   ckpt_interval: 5000
   grad_clip: 0.1
   grad_clip_lat: 0.1
@@ -26,7 +26,7 @@ training:
     surf_sdf: 2.0
     normals: 0.3
     space_sdf: 0.01
-    near_udf: 1.0
+    near_udf: 100
     grad: 0.1
     anchors: 0.0
     symm_dist: 0.0

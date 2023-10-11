@@ -20,8 +20,9 @@ import wandb
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
 parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
 parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
-parser.add_argument('--gpu', type=int, default=3, help='gpu index')
+parser.add_argument('--gpu', type=int, default=7, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
+parser.add_argument('--output', type=str, default='shape', help='output directory')
 # setting
 
 args = parser.parse_args()
@@ -91,11 +92,11 @@ if args.mode == "viz_shape":
         def generate_random_latent(device):
                 return torch.normal(mean=0, std=0.1/math.sqrt(512), size=(512,)).to(device)
 
-        checkpoint = torch.load('checkpoints/checkpoint_epoch_30000.tar')
+        checkpoint = torch.load('checkpoints/checkpoint_epoch_0.tar')
         decoder.load_state_dict(checkpoint['decoder_state_dict'])
         decoder.eval()
         step =0
-        out_dir = 'sample_result/shape_new'
+        out_dir =os.path.join('sample_result', args.output)
         if not os.path.exists(out_dir):
                 os.makedirs(out_dir)
         mini = [-.95, -.95, -.95]
@@ -120,15 +121,15 @@ if args.mode == "viz_shape":
                 print('starting mcubes')
                 mesh = mesh_from_logits(logits, mini, maxi,256)
                 print('done mcubes')
-                pv.start_xvfb()
-                pl = pv.Plotter(off_screen=True)
-                pl.add_mesh(mesh)
-                pl.reset_camera()
-                pl.camera.position = (0, 3, 0)
-                pl.camera.zoom(1.4)
-                pl.set_viewup((0, 1, 0))
-                pl.camera.view_plane_normal = (-0, -0, 1)
-                pl.show(screenshot=out_dir + '/step_{:04d}.png'.format(step), auto_close=True)
+                # pv.start_xvfb()
+                # pl = pv.Plotter(off_screen=True)
+                # pl.add_mesh(mesh)
+                # pl.reset_camera()
+                # pl.camera.position = (0, 3, 0)
+                # pl.camera.zoom(1.4)
+                # pl.set_viewup((0, 1, 0))
+                # pl.camera.view_plane_normal = (-0, -0, 1)
+                # pl.show(screenshot=out_dir + '/step_{:04d}.png'.format(step), auto_close=True)
                 mesh.export(out_dir + '/mesh_{:04d}.ply'.format(step))
                 #print(pl.camera)
                 step += 1
