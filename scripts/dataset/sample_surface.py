@@ -44,8 +44,7 @@ def run_species(manager):
         os.makedirs(out_dir, exist_ok=True)
         np.save(os.path.join(out_dir,f"{neutral_name}_neutral.npy"), result)
         
-        # sample surface points and deformation field of poses
-        
+
 
 def run_poses(manager):
     all_pose = manager.get_all_pose()

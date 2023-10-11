@@ -18,7 +18,7 @@ class LeafScanManager():
     
     def get_poses(self, species):
         species_path = os.path.join(self.root_path, species)
-        poses = [pose for pose in os.listdir(species_path) if 'rigid' in pose]
+        poses = [pose for pose in os.listdir(species_path) if not '.mtl' in pose]
         return sorted(poses)
     
     def get_all_neutral(self):

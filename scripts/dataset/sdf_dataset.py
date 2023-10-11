@@ -120,7 +120,7 @@ class LeafImageDataset(Dataset):
         
      
 
-class LeafPoseDataset(Dataset):
+class LeafDeformDataset(Dataset):
     def __init__(self,
                  mode: Literal['train','val'],
                  n_supervision_points_face: int,
@@ -150,6 +150,7 @@ class LeafPoseDataset(Dataset):
         flow_vec = pose_mesh.vertices - neutral_mesh.vertices
         
         
+        
         return None
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
@@ -160,7 +161,7 @@ if __name__ == "__main__":
     #                            batch_size=CFG['training']['batch_size'],
     #                            sigma_near=CFG['training']['sigma_near'],
     #                            root_dir=CFG['training']['root_dir'])
-    dataset = LeafPoseDataset(mode='train',
+    dataset = LeafDeformDataset(mode='train',
                                n_supervision_points_face=CFG['training']['npoints_decoder'],
                                n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                                batch_size=CFG['training']['batch_size'],
