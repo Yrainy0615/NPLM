@@ -2,7 +2,7 @@ from scripts.model.deepSDF import DeepSDF, DeformationNetwork
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafPoseDataset
+from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafDeformDataset
 import yaml
 from scripts.training.trainer_shape import ShapeTrainer
 import math
@@ -92,7 +92,7 @@ if args.mode == "viz_shape":
         def generate_random_latent(device):
                 return torch.normal(mean=0, std=0.1/math.sqrt(512), size=(512,)).to(device)
 
-        checkpoint = torch.load('checkpoints/checkpoint_epoch_0.tar')
+        checkpoint = torch.load('checkpoints/checkpoint_epoch_5000.tar')
         decoder.load_state_dict(checkpoint['decoder_state_dict'])
         decoder.eval()
         step =0
