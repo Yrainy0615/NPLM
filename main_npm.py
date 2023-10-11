@@ -19,8 +19,8 @@ import wandb
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
 parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
-parser.add_argument('--mode', type=str, default='viz_shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
-parser.add_argument('--gpu', type=int, default=0, help='gpu index')
+parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
+parser.add_argument('--gpu', type=int, default=3, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 # setting
 
