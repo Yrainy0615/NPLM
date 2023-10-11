@@ -135,29 +135,42 @@ class LeafDeformDataset(Dataset):
         self.n_supervision_points_face = n_supervision_points_face
         self.near_sigma = sigma_near
         self.all_neutral = self.manager.get_all_neutral()
-        test_pose =os.listdir('dataset/ScanData/id2')
-        self.all_posed = [os.path.join('dataset/ScanData/id2',f) for f in test_pose]
-        
+        self.all_posed = [self.manager.get_all_pose()]
+        self.num_species = len(self.all_species)
+
+        self.checkpoint = torch.load('checkpoints/checkpoint_epoch_20000.tar')
+        self.lat_shape_all = self.checkpoint['latent_idx_state_dict']['weight']
+        self.species_to_idx = {species:idx for idx, species in enumerate(self.all_species)}
+
     def __len__(self):
         return len(self.all_posed)     
     
     def __getitem__(self, index):
-        pose_file = self.all_posed[index]
-        neutral_file = self.all_posed[0]
-        neutral_mesh = trimesh.load_mesh(neutral_file)
-        pose_mesh = trimesh.load_mesh(pose_file)
-        pcu_neutral = self.manager.load_mesh(neutral_file)
+        posed = self.all_posed[0][index]
+      
+        species = list(posed.keys())[0]
+        name  = posed[species]
+        name = name.split('.obj')[0]
+        name = name + '_deform.npy' 
+        trainfile = np.load(name, allow_pickle=True)
+        valid = np.logical_not(np.any(np.isnan(trainfile), axis=-1))
+        point_corresp = trainfile[valid,:].astype(np.float32)
+        
         # subsample points for supervision
-        sample = sample_surface(pcu_neutral,n_samps=self.n_supervision_points_face)
-        points =sample['points']
-        normals = sample['normals'] 
-        flow_vec = pose_mesh.vertices - neutral_mesh.vertices
-
-        ret_dict = {'points': points,
-                    'normals': normals,
-                    'flow_vec': flow_vec,
-                    'idx': np.array([index])}
-        return ret_dict
+        sup_idx = np.random.randint(0, point_corresp.shape[0], self.n_supervision_points_face)
+        sup_point_neutral = point_corresp[sup_idx,:3]
+        sup_posed = point_corresp[sup_idx,3:]
+        neutral = sup_point_neutral
+        pose = sup_posed
+        if species == 'id2' or species == 'id1':
+            species = 'yellow'
+        return {
+            'points_neutral': neutral,
+            'points_posed': pose,
+            'idx': np.array([index]),
+            'species': self.species_to_idx[species],
+            'species_to_idx': self.species_to_idx,
+        }
 
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
@@ -175,6 +188,6 @@ if __name__ == "__main__":
                                sigma_near=CFG['training']['sigma_near'],
                                root_dir=CFG['training']['root_dir'])
     
-    dataloader = DataLoader(dataset, batch_size=12,shuffle=False, num_workers=2)
+    dataloader = DataLoader(dataset, batch_size=1,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))
     pass

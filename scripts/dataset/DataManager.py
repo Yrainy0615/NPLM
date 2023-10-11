@@ -18,7 +18,7 @@ class LeafScanManager():
     
     def get_poses(self, species):
         species_path = os.path.join(self.root_path, species)
-        poses = [pose for pose in os.listdir(species_path) if not '.mtl' in pose]
+        poses = [pose for pose in os.listdir(species_path) if not '.mtl' in pose and not 'npy'  in pose]
         return sorted(poses)
     
     def get_all_neutral(self):
@@ -76,7 +76,7 @@ class LeafScanManager():
         species_dirs = [os.path.join(self.root_path, species) for species in self.species_dirs]
         for folder_path in species_dirs:
             folder_name = os.path.basename(folder_path)
-            obj_files = [os.path.join(folder_path, filename) for filename in os.listdir(folder_path) if filename.endswith('.obj') and 'rigid' in filename]
+            obj_files = [os.path.join(folder_path, filename) for filename in os.listdir(folder_path) if filename.endswith('.obj')]
             for obj_file in obj_files:
                 obj_list.append({folder_name: obj_file})
 

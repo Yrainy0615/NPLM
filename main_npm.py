@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafDeformDataset
 import yaml
 from scripts.training.trainer_shape import ShapeTrainer
+from scripts.training.trainer_deform import DeformTrainer
 import math
 from skimage.measure import marching_cubes
 import trimesh
@@ -19,7 +20,7 @@ import wandb
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
 parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
-parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape'], help='training mode')
+parser.add_argument('--mode', type=str, default='deformation', choices=['shape', 'deformation','viz_shape'], help='training mode')
 parser.add_argument('--gpu', type=int, default=7, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 parser.add_argument('--output', type=str, default='shape', help='output directory')
@@ -50,9 +51,9 @@ if args.mode == "shape":
         trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device)
         trainer.train(30001)
     
-if args.mode == "pose":
-        wandb.init(project='NPLM', name =args.wandb)
-        trainset = LeafPoseDataset(mode='train',
+if args.mode == "deformation":
+        #wandb.init(project='NPLM', name =args.wandb)
+        trainset = LeafDeformDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                             batch_size=CFG['training']['batch_size'],
@@ -67,7 +68,7 @@ if args.mode == "pose":
             )
 
         decoder = decoder.to(device)
-     
+        trainer = DeformTrainer(decoder, CFG, trainset,trainloader, device)
         trainer.train(30001)
 
     
@@ -92,7 +93,7 @@ if args.mode == "viz_shape":
         def generate_random_latent(device):
                 return torch.normal(mean=0, std=0.1/math.sqrt(512), size=(512,)).to(device)
 
-        checkpoint = torch.load('checkpoints/checkpoint_epoch_5000.tar')
+        checkpoint = torch.load('checkpoints/checkpoint_epoch_25000.tar')
         decoder.load_state_dict(checkpoint['decoder_state_dict'])
         decoder.eval()
         step =0
