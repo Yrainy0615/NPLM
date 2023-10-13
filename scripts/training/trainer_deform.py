@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 import math
 from glob import glob
-from scripts.model.loss_functions import compute_loss
+from scripts.model.loss_functions import compute_loss, compute_loss_corresp_forward
 import os
 import numpy as np
 import wandb
@@ -11,21 +11,23 @@ class DeformTrainer(object):
     def __init__(self, decoder, decoder_shape,cfg, 
                  trainset,trainloader,device):
         self.decoder = decoder
+        self.decoder_shape = decoder_shape
         self.cfg = cfg['training']
         # latent initializaiton
-        self.latent_shape = torch.nn.Embedding(trainset.num_species, decoder_shape.lat_dim, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_shape = torch.nn.Embedding(7, decoder_shape.lat_dim, max_norm = 1.0, sparse=True, device = device).float()
         self.latent_shape.requires_grad_  = False
-        self.latent_deform = torch.nn.Embedding(len(trainset), self.decoder.lat_dim, max_norm = 1.0, sparse=True, device = device).float()
-        self.init_shape_state(cfg['training']['shape_ckpt'], 'checkpoints/checkpoint_epoch_25000.tar')
-
+        self.latent_deform = torch.nn.Embedding(len(trainset), self.decoder.lat_dim_expr, max_norm = 1.0, sparse=True, device = device).float()
+        torch.nn.init.normal_(self.latent_deform.weight.data, 0.0, 0.01)
+        print(self.latent_deform.weight.data.shape)
+        print(self.latent_deform.weight.data.norm(dim=-1).mean())
+        self.init_shape_state(cfg['training']['shape_ckpt'], 'checkpoints/')
         
         self.trainloader = trainloader
-
         self.device = device
         self.optimizer_decoder = optim.AdamW(params=list(decoder.parameters()),
                                              lr = self.cfg['lr'],
                                              weight_decay= self.cfg['weight_decay'])
-        self.optimizer_latent = optim.SparseAdam(params= list(self.latent_idx.parameters()), lr=self.cfg['lr_lat'])
+        self.optimizer_latent = optim.SparseAdam(params= list(self.latent_deform.parameters()), lr=self.cfg['lr_lat'])
         self.lr = self.cfg['lr']
         self.lr_lat = self.cfg['lr_lat']
 
@@ -35,10 +37,10 @@ class DeformTrainer(object):
     def init_shape_state(self, ckpt, path):
         path = path + 'checkpoint_epoch_{}.tar'.format(ckpt)
         checkpoint = torch.load(path)
-        self.n n.load_state_dict(checkpoint['decoder_state_dict'])
-        self.latent_shape.load_state_dict(checkpoint['latent_codes_state_dict'])
+        self.decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
+        self.latent_shape.load_state_dict(checkpoint['latent_idx_state_dict'])
         print('Train shape space loaded with dims: ')
-        print(self.latent_codes_shape.weight.shape)
+        print(self.latent_shape.weight.shape)
   
         print('Loaded checkpoint from: {}'.format(path))
         
@@ -102,17 +104,17 @@ class DeformTrainer(object):
             for param_group in self.optimizer_latent.param_groups:
                 param_group["lr"] = lr
             # for param_group in self.optimizer_lat_val.param_groups:
-            #     param_group["lr"] = lr
+            #     param_group["lr"] = lr 
         
     def save_checkpoint(self, epoch):
-        path = self.checkpoint_path + 'checkpoint_epoch_{}.tar'.format(epoch)
+        path = self.checkpoint_path + 'deform_epoch_{}.tar'.format(epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
                       #  'optimizer_lat_val_state_dict': self.optimizer_lat_val.state_dict(),
-                        'latent_idx_state_dict': self.latent_idx.state_dict(),
+                        'latent_deform_state_dict': self.latent_deform.state_dict(),
                   
                        # 'latent_codes_val_state_dict': self.latent_codes_val.state_dict()
                        },
@@ -122,7 +124,9 @@ class DeformTrainer(object):
         self.decoder.train()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
-        loss_dict = compute_loss(batch, self.decoder, self.latent_idx, self.device)
+        loss_dict = compute_loss_corresp_forward(batch, decoder_shape=self.decoder_shape,
+                                decoder=self.decoder, device=self.device,
+                                latent_codes=self.latent_deform, latent_codes_shape=self.latent_shape)
         loss_total = 0
         for key in loss_dict.keys():
             loss_total += self.cfg['lambdas'][key] * loss_dict[key]
@@ -133,7 +137,7 @@ class DeformTrainer(object):
             torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
 
         if self.cfg['grad_clip_lat'] is not None:
-            torch.nn.utils.clip_grad_norm_(self.latent_idx.parameters(), max_norm=self.cfg['grad_clip_lat'])
+            torch.nn.utils.clip_grad_norm_(self.latent_deform.parameters(), max_norm=self.cfg['grad_clip_lat'])
         self.optimizer_decoder.step()
         self.optimizer_latent.step()
 
@@ -148,7 +152,7 @@ class DeformTrainer(object):
 
     def train(self, epochs):
         loss = 0
-       # start = self.load_checkpoint()
+        # start = self.load_checkpoint()
         start =0
         ckp_interval =self.cfg['ckpt_interval']
         for epoch in range(start, epochs):

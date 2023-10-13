@@ -22,7 +22,7 @@ class DeepSDF(nn.Module):
             d_in_spatial = input_dim
         else:
             d_in_spatial = input_dim*(2*num_freq_bands+1)
-        d_in = lat_dim + d_in_spatial
+        d_in = lat_dim + d_in_spatial # 515
         self.lat_dim = lat_dim
         self.input_dim = input_dim
         print(d_in)

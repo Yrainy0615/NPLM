@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafDeformDataset
 import yaml
+from scripts.model.EnsembledDeepSDF import FastEnsembleDeepSDFMirrored
 from scripts.training.trainer_shape import ShapeTrainer
 from scripts.training.trainer_deform import DeformTrainer
 import math
@@ -19,7 +20,7 @@ import wandb
 
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
+parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm_def.yaml', help='config file')
 parser.add_argument('--mode', type=str, default='deformation', choices=['shape', 'deformation','viz_shape'], help='training mode')
 parser.add_argument('--gpu', type=int, default=7, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
@@ -52,7 +53,7 @@ if args.mode == "shape":
         trainer.train(30001)
     
 if args.mode == "deformation":
-        #wandb.init(project='NPLM', name =args.wandb)
+        wandb.init(project='NPLM', name =args.wandb)
         trainset = LeafDeformDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
@@ -60,15 +61,29 @@ if args.mode == "deformation":
                             sigma_near=CFG['training']['sigma_near'],
                             root_dir=CFG['training']['root_dir'])
         trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=2)
-        decoder = DeformationNetwork(
-            lat_dim=CFG['decoder']['decoder_lat_dim'],
-            hidden_dim=CFG['decoder']['decoder_hidden_dim'],
+
+        decoder_shape = DeepSDF(
+            lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
+            hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
             geometric_init=True,
             out_dim=1,
-            )
+        )
+        decoder_shape.mlp_pos = None
+        decoder = DeepSDF(lat_dim=512+200,
+                      hidden_dim=1024,
+                      geometric_init=False,
+                      out_dim=3,
+                      input_dim=3)
+        decoder.lat_dim_expr = 200
 
         decoder = decoder.to(device)
-        trainer = DeformTrainer(decoder, CFG, trainset,trainloader, device)
+        decoder_shape = decoder_shape.to(device)
+        trainer = DeformTrainer(
+                                decoder=decoder,
+                                decoder_shape=decoder_shape,
+                                cfg=CFG, 
+                                trainset=trainset,trainloader=trainloader, 
+                                device=device)
         trainer.train(30001)
 
     

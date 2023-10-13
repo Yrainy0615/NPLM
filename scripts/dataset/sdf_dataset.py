@@ -143,7 +143,7 @@ class LeafDeformDataset(Dataset):
         self.species_to_idx = {species:idx for idx, species in enumerate(self.all_species)}
 
     def __len__(self):
-        return len(self.all_posed)     
+        return len(self.all_posed[0])     
     
     def __getitem__(self, index):
         posed = self.all_posed[0][index]
@@ -190,4 +190,4 @@ if __name__ == "__main__":
     
     dataloader = DataLoader(dataset, batch_size=1,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))
-    pass
+

@@ -1,0 +1,35 @@
+shape_decoder:
+  decoder_lat_dim: 512
+  decoder_hidden_dim: 1024
+deform_decoder:
+  decoder_hidden_dim: 512
+  decoder_lat_dim: 200
+  decoder_nblocks: -1
+encoder: null
+has_forward: true
+training:
+  save_path: checkpoints/
+  root_dir: dataset/ScanData
+  batch_size: 32
+  ckpt_interval: 5000
+  grad_clip: 0.025
+  grad_clip_lat: 0.025
+  npoints_decoder: 2000
+  npoints_decoder_non: 250
+  sigma_near: 0.001
+  weight_decay: 0.02
+  lambdas:
+    corresp: 500.0
+    lat_reg: 5.0e-05
+    loss_reg_zero: 0.0
+  lr: 0.0001
+  lr_decay_factor: 0.2
+  lr_decay_factor_lat: 0.2
+  lr_decay_interval: 1000
+  lr_decay_interval_lat: 1000
+  lr_lat: 0.0005
+  npoints_decoder: 1000
+  shape_ckpt: 25000
+  shape_exp_name: SHAPE_EXP_NAME
+  sigma_near: 0.01
+  weight_decay: 1.0e-05
