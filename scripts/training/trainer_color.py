@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 import math
 from glob import glob
-from scripts.model.loss_functions import compute_loss, compute_loss_corresp_forward, compute_color_forward
+from scripts.model.loss_functions import perceptual_loss, compute_loss_corresp_forward, compute_color_forward
 import os
 import numpy as np
 import wandb
@@ -21,6 +21,7 @@ from pytorch3d.renderer import (
 from PIL import Image
 import torchvision.utils as vutils
 import torch.nn as nn
+import torchvision
 
 def compute_gradient_penalty(real, fake, discriminator, lambda_pen,device):
     # Compute the sample as a linear combination
@@ -95,8 +96,9 @@ class ColorTrainer(object):
         self.discriminator = discriminator
         self.discriminator.apply(weights_init)
         self.criterion = torch.nn.BCELoss()
-        self.optimizer_D = optim.Adam(self.discriminator.parameters(), lr=0.00002, betas=(0.5, 0.999))
-        
+        self.optimizer_D = optim.Adam(self.discriminator.parameters(), lr=0.000002, betas=(0.5, 0.999))
+        self.mse = torch.nn.MSELoss()
+        self.vgg = torchvision.models.vgg19(pretrained=True).features.to(device).eval()
         # renderer
         R, t = look_at_view_transform(0.00001, 34, 138)
         cameras = FoVPerspectiveCameras(device=self.device, R=R, T=t)
@@ -202,10 +204,14 @@ class ColorTrainer(object):
         self.decoder_shape.eval()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
-        # real_label_value = torch.rand(batch['rgb'].shape[0], device=self.device) * 0.1 + 0.9  # Random values between 0.9 and 1.0
-        # fake_label_value = torch.rand(batch['rgb'].shape[0], device=self.device) * 0.1  # Random values between 0 and 0.1
-        # real_label = torch.full((batch['rgb'].shape[0],), real_label_value, dtype=torch.float, device=self.device)
-        # fake_label = torch.full((batch['rgb'].shape[0],), fake_label_value, dtype=torch.float, device=self.device)        
+        
+        # train discriminator
+        for p in self.discriminator.parameters():
+            p.requires_grad = True
+        self.optimizer_D.zero_grad() 
+        real_label = torch.rand(batch['rgb'].shape[0], device=self.device) * 0.1 + 0.9  # Random values between 0.9 and 1.0
+        fake_label = torch.rand(batch['rgb'].shape[0], device=self.device) * 0.1  # Random values between 0 and 0.1
+       
         color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
                                 decoder=self.decoder, device=self.device,
                                 latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
@@ -215,58 +221,70 @@ class ColorTrainer(object):
         self.discriminator.zero_grad()
         real = batch['rgb'].to(self.device)
         real = real.permute(0,3,1,2).float()
-       # label = torch.full((batch['rgb'].shape[0],), real_label, dtype=torch.float, device=self.device)
+        #label = torch.full((batch['rgb'].shape[0],), real_label, dtype=torch.float, device=self.device)
         output_real = self.discriminator(real).view(-1)
-        # errD_real = self.criterion(output_real, label)
+        # errD_real = self.criterion(output_real, real_label)
         # errD_real.backward()
 
         # fake
         fake = self.renderer(point_cloud)
 
-      #  label.fill_(fake_label)
+        #label.fill_(fake_label)
         fake = fake.permute(0,3,1,2)
         output_fake = self.discriminator(fake.detach()).view(-1)
-        # errD_fake = self.criterion(output_fake, label)
+        # errD_fake = self.criterion(output_fake, fake_label)
         # errD_fake.backward()
-        gradient_penalty = compute_gradient_penalty(real, fake, self.discriminator, self.cfg['lambda_pen'],device=self.device)
-        loss = torch.mean(output_fake - output_real + gradient_penalty)
-        loss.backward()
+        gradient_penalty = compute_gradient_penalty(real, fake.detach(), self.discriminator, self.cfg['lambda_pen'],device=self.device)
+        loss_w = torch.mean(output_fake - output_real + gradient_penalty)
+
+        loss_w.backward()
         self.optimizer_D.step()
         wdist = torch.mean(output_real - output_fake)
         loss_dict = {'w_distance': wdist,
-                     'loss_discriminator': loss,
                      'gradient_penalty': gradient_penalty.mean()}
 
         
         # train generator
-        for i in range(5):
-            self.decoder.zero_grad()
-            color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
-                                decoder=self.decoder, device=self.device,
-                                latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
-            point_cloud = Pointclouds(points=batch['points'].to(self.device).to(dtype=torch.float32), features=color)
-            fake = self.renderer(point_cloud)   
-            fake = fake.permute(0,3,1,2)
-      #      label.fill_(real_label)
-            output_fake = self.discriminator(fake).view(-1)
-            loss_G = - torch.mean(output_fake)
-            if i <4:
-                loss_G.backward(retain_graph=True)
-            else:
-                loss_G.backward()
-            # if self.cfg['grad_clip'] is not None:
-            #     torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
 
-            if self.cfg['grad_clip_lat'] is not None:
-                torch.nn.utils.clip_grad_norm_(self.latent_color.parameters(), max_norm=self.cfg['grad_clip_lat'])
+        for p in self.discriminator.parameters():  # reset requires_grad
+            p.requires_grad = False
+        self.optimizer_decoder.zero_grad()
+        color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
+                            decoder=self.decoder, device=self.device,
+                            latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
+        point_cloud = Pointclouds(points=batch['points'].to(self.device).to(dtype=torch.float32), features=color)
+        fake = self.renderer(point_cloud)   
+        fake = fake.permute(0,3,1,2)
+        # label.fill_(real_label)
+        # loss_d = self.criterion(self.discriminator(fake,sigmoid=True).view(-1), real_label)
+        output_fake = self.discriminator(fake).view(-1)
+        
+        # mse loss
+        mask = (fake != 0 ).float()
+        loss_mse = self.mse(fake * mask, real*mask)/mask.sum()
+        
+        # perceptual loss
+        loss_per = perceptual_loss(vgg=self.vgg, fake=fake, real=real)
+        
+        
+        loss_G = - torch.mean(output_fake)
+        loss = loss_G + self.cfg['lambdas']['loss_mse'] * loss_mse   # + self.cfg['lambdas']['loss_per'] * loss_per
+        loss.backward()
+        # if self.cfg['grad_clip'] is not None:
+        #     torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
 
-            self.optimizer_decoder.step()
-            self.optimizer_latent.step()
+        if self.cfg['grad_clip_lat'] is not None:
+            torch.nn.utils.clip_grad_norm_(self.latent_color.parameters(), max_norm=self.cfg['grad_clip_lat'])
+
+        self.optimizer_decoder.step()
+        self.optimizer_latent.step()
         fake_result = save_grid_image(fake)
-        loss_dict.update({'loss_G': loss_G})
+        real_result = save_grid_image(real)
+        loss_dict.update({'loss_G': loss_G,
+                          'loss_mse': loss_mse,})
         
 
-        return loss_dict    , fake_result
+        return loss_dict    , fake_result, real_result
     
     
 
@@ -280,12 +298,13 @@ class ColorTrainer(object):
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict, fake = self.train_step(batch)
+                loss_dict, fake, real = self.train_step(batch)
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
   
                 wandb.log(loss_values)
     
                 wandb.log({'fake':wandb.Image(fake)})
+                wandb.log({'real':wandb.Image(real)})
                 for k in loss_dict:
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0:

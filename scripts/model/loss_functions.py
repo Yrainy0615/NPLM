@@ -348,3 +348,14 @@ def compute_color_forward(batch, decoder, decoder_shape, latent_codes, latent_co
     cond_color = glob_cond_color.repeat(1, points.shape[1], 1)
     color, _ = decoder(points, cond_color, None)
     return color
+
+
+def perceptual_loss(fake, real,vgg):
+    layers = {
+        'relu2_2': vgg[9]
+    }
+   
+    fake_features = layers['relu2_2'](fake)
+    real_features = layers['relu2_2'](real)
+    loss = F.mse_loss(fake_features, real_features)/ (32*32)
+    return loss

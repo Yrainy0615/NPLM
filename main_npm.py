@@ -23,7 +23,7 @@ import wandb
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
 parser.add_argument('--mode', type=str, default='color', choices=['shape', 'deformation','viz_shape', 'color'], help='training mode')
-parser.add_argument('--gpu', type=int, default=7, help='gpu index')
+parser.add_argument('--gpu', type=int, default=5, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 parser.add_argument('--output', type=str, default='shape', help='output directory')
 # setting
