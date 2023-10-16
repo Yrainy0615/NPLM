@@ -8,7 +8,7 @@ import os
 from matplotlib import pyplot as plt
 import numpy as np
 
-def sample_surface(mesh, n_samps, viz=True):
+def sample_surface(mesh, n_samps, viz=False):
     verts = mesh.vertex_data.positions
     faces = mesh.face_data.vertex_ids
     normal = pcu.estimate_mesh_vertex_normals(verts, faces)

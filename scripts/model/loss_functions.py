@@ -328,3 +328,23 @@ def compute_loss_corresp_forward(batch, decoder, decoder_shape, latent_codes, la
     return {'corresp': loss_corresp.mean(),
             'lat_reg': lat_mag.mean(),
             'loss_reg_zero': loss_reg_zero}
+
+
+def compute_color_forward(batch, decoder, decoder_shape, latent_codes, latent_codes_shape, device, epoch=-1, exp_path=None):
+    
+    if 'path' in batch:
+        del batch['path']
+    batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    #batch_cuda = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
+    # create  
+    points = batch_cuda['points'].clone().detach().requires_grad_()
+    idx_shape = torch.ones(32,1,dtype=torch.int64)
+    glob_cond_shape = latent_codes_shape(idx_shape.to(device))
+    glob_cond_color = latent_codes(batch['idx'].to(device))
+    cond_shape = glob_cond_shape.repeat(1, points.shape[1],1)
+    # sdf, _  = decoder_shape(points,cond_shape,None)
+
+    
+    cond_color = glob_cond_color.repeat(1, points.shape[1], 1)
+    color, _ = decoder(points, cond_color, None)
+    return color

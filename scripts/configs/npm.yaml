@@ -6,6 +6,7 @@ decoder:
 
 training:
   root_dir: dataset/ScanData
+  root_dir_color: dataset/LeafData
   save_path: checkpoints/
   batch_size: 1
   ckpt_interval: 5000

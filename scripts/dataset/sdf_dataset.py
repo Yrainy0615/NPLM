@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import random
-from .DataManager import LeafScanManager
+from .DataManager import LeafScanManager, LeafImageManger
 from typing import Literal
 import os
 import yaml
@@ -10,6 +10,7 @@ import igl
 from .sample_surface import sample_surface
 import trimesh
 import point_cloud_utils as pcu
+import cv2
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)
@@ -78,49 +79,7 @@ class LeafShapeDataset(Dataset):
                     'idx': np.array([index]),
                     'species': self.species_to_idx[species]}
         return ret_dict
-
-
-class LeafImageDataset(Dataset):
-    def __init__(self,
-                 mode: Literal['train','val'],
-                 n_supervision_points_face: int,
-                 n_supervision_points_non_face: int,
-                 batch_size: int,
-                 sigma_near: float,
-                 root_dir: str):
-        self.manager = LeafImageManger(root_dir)
-        self.mode = mode
-        self.batch_size = batch_size
-        self.n_supervision_points_face = n_supervision_points_face
-        self.n_supervision_points_non_face  = n_supervision_points_non_face
-        self.sigma_near = sigma_near
-        self.all_mesh= self.manager.get_all_mesh()
-        self.species_to_idx = self.manager.get_species_to_idx()
-    
-    def __len__(self):
-        return len(self.all_mesh)
-    
-    def __getitem__(self, index):
-        train_file = self.all_mesh[index]
-        dict = self.manager.extract_info_from_meshfile(train_file)
-        mesh = dict['mesh']
-        sample = sample_surface(mesh,n_samps=2000)
-        sup_points = sample['points']
-        sup_normals = sample['points']
-        sup_grad_far = uniform_ball(self.n_supervision_points_face //8, rad=0.5)
-        sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
-        sup_grad_near_udf = np.abs(igl.signed_distance(sup_grad_near,mesh.vertex_data.positions, mesh.face_data.vertex_ids)[0])
-        ret_dict = {'points': sup_points,
-                    'normals': sup_normals,
-                    'sup_grad_far': sup_grad_far,
-                    'sup_grad_near': sup_grad_near,
-                    'sup_grad_near_udf': sup_grad_near_udf,
-                    'idx': np.array([index]),
-                    'species':self.species_to_idx[dict['species']] }
-        return ret_dict
-        
-     
-
+       
 class LeafDeformDataset(Dataset):
     def __init__(self,
                  mode: Literal['train','val'],
@@ -172,6 +131,47 @@ class LeafDeformDataset(Dataset):
             'species_to_idx': self.species_to_idx,
         }
 
+class LeafColorDataset(Dataset):
+    def __init__(self,
+                 mode: Literal['train','val'],
+                 n_supervision_points_face: int,
+                 n_supervision_points_non_face: int,
+                 batch_size: int,
+                 sigma_near: float,
+                 root_dir: str):
+        self.manager = LeafImageManger(root_dir)
+        self.mode = mode
+        self.batch_size = batch_size
+        self.n_supervision_points_face = n_supervision_points_face
+        self.n_supervision_points_non_face  = n_supervision_points_non_face
+        self.sigma_near = sigma_near
+        self.all_mesh= self.manager.get_all_mesh()
+        self.all_mask = self.manager.get_all_mask()
+        self.species_to_idx = self.manager.get_species_to_idx()
+    
+    def __len__(self):
+        return len(self.all_mesh)
+    
+    def __getitem__(self, index):
+        mesh_file = self.all_mesh[index]
+        rgb_file = mesh_file.replace('.obj', '_aligned.JPG')
+        rgb = cv2.imread(rgb_file, cv2.IMREAD_COLOR)
+        rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+        rgb = cv2.resize(rgb, (64,64))
+        dict = self.manager.extract_info_from_meshfile(mesh_file)
+        mesh = dict['mesh']
+        sample = sample_surface(mesh,n_samps=2000)
+        sup_points = sample['points']
+      
+        sup_grad_far = uniform_ball(self.n_supervision_points_face //8, rad=0.5)
+        sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
+        points = np.concatenate([sup_points, sup_grad_far, sup_grad_near], axis=0)
+        ret_dict = {'points': points,
+                    'rgb': rgb,
+                    'idx': np.array([index]),}
+        return ret_dict
+
+
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
@@ -181,12 +181,18 @@ if __name__ == "__main__":
     #                            batch_size=CFG['training']['batch_size'],
     #                            sigma_near=CFG['training']['sigma_near'],
     #                            root_dir=CFG['training']['root_dir'])
-    dataset = LeafDeformDataset(mode='train',
-                               n_supervision_points_face=CFG['training']['npoints_decoder'],
-                               n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
-                               batch_size=CFG['training']['batch_size'],
-                               sigma_near=CFG['training']['sigma_near'],
-                               root_dir=CFG['training']['root_dir'])
+    # dataset = LeafDeformDataset(mode='train',
+    #                            n_supervision_points_face=CFG['training']['npoints_decoder'],
+    #                            n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
+    #                            batch_size=CFG['training']['batch_size'],
+    #                            sigma_near=CFG['training']['sigma_near'],
+    #                            root_dir=CFG['training']['root_dir'])
+    dataset = LeafColorDataset(mode='train',    
+                                 n_supervision_points_face=CFG['training']['npoints_decoder'],
+                                 n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
+                                 batch_size=CFG['training']['batch_size'],
+                                 sigma_near=CFG['training']['sigma_near'],
+                                 root_dir=CFG['training']['root_dir_color'])
     
     dataloader = DataLoader(dataset, batch_size=1,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))

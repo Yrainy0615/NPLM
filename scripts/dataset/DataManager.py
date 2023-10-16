@@ -82,7 +82,7 @@ class LeafScanManager():
 
         return obj_list
 
-class LeafImageManager():
+class LeafImageManger():
     def __init__(self, root_dir):
         self.root_dir = root_dir
         self.all_species = os.listdir(root_dir)

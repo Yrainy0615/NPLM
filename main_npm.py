@@ -2,11 +2,13 @@ from scripts.model.deepSDF import DeepSDF, DeformationNetwork
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafDeformDataset
+from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafDeformDataset, LeafColorDataset
 import yaml
 from scripts.model.EnsembledDeepSDF import FastEnsembleDeepSDFMirrored
 from scripts.training.trainer_shape import ShapeTrainer
 from scripts.training.trainer_deform import DeformTrainer
+from scripts.training.trainer_color import ColorTrainer
+from scripts.model.discriminator import Discriminator
 import math
 from skimage.measure import marching_cubes
 import trimesh
@@ -20,19 +22,19 @@ import wandb
 
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm_def.yaml', help='config file')
-parser.add_argument('--mode', type=str, default='deformation', choices=['shape', 'deformation','viz_shape'], help='training mode')
+parser.add_argument('--mode', type=str, default='color', choices=['shape', 'deformation','viz_shape', 'color'], help='training mode')
 parser.add_argument('--gpu', type=int, default=7, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 parser.add_argument('--output', type=str, default='shape', help='output directory')
 # setting
 
 args = parser.parse_args()
-#os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
-CFG = yaml.safe_load(open(args.config, 'r'))
+os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.mode == "shape":
+        config = 'NPLM/scripts/configs/npm.yaml'
+        CFG = yaml.safe_load(open(config, 'r'))
         wandb.init(project='NPLM', name =args.wandb)
         trainset = LeafShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
@@ -53,6 +55,8 @@ if args.mode == "shape":
         trainer.train(30001)
     
 if args.mode == "deformation":
+        config = 'NPLM/scripts/configs/npm_def.yaml'
+        CFG = yaml.safe_load(open(config, 'r'))
         wandb.init(project='NPLM', name =args.wandb)
         trainset = LeafDeformDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
@@ -86,7 +90,48 @@ if args.mode == "deformation":
                                 device=device)
         trainer.train(30001)
 
-    
+if args.mode == "color":
+        config = 'NPLM/scripts/configs/npm_color.yaml'
+        CFG = yaml.safe_load(open(config, 'r'))
+
+        wandb.init(project='NPLM', name =args.wandb)
+        trainset = LeafColorDataset(mode='train',
+                            n_supervision_points_face=CFG['training']['npoints_decoder'],
+                            n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
+                            batch_size=CFG['training']['batch_size'],
+                            sigma_near=CFG['training']['sigma_near'],
+                            root_dir=CFG['training']['root_dir_color'])
+        trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=2)
+
+        decoder_shape = DeepSDF(
+            lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
+            hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
+            geometric_init=True,
+            out_dim=1,
+        )
+        checkpoint_shape = 'checkpoints/shape_epoch_25000.tar'
+        ckpt_shape = torch.load(checkpoint_shape)
+        
+        decoder_shape.mlp_pos = None
+        decoder_shape.load_state_dict(ckpt_shape['decoder_state_dict'])
+        decoder = DeepSDF(lat_dim=200,
+                      hidden_dim=1024,
+                      geometric_init=False,
+                      out_dim=3,
+                      input_dim=3)
+        decoder.lat_dim_expr = 200
+        discriminator = Discriminator(channel=3, size=64)
+        discriminator = discriminator.to(device)
+        decoder = decoder.to(device)
+        decoder_shape = decoder_shape.to(device)
+        trainer = ColorTrainer(
+                                decoder=decoder,
+                                decoder_shape=decoder_shape,
+                                cfg=CFG, 
+                                trainset=trainset,trainloader=trainloader, 
+                                discriminator=discriminator,
+                                device=device)
+        trainer.train(30001)
     
     
     

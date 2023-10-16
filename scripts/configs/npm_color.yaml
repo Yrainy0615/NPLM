@@ -11,7 +11,7 @@ training:
   save_path: checkpoints/
   root_dir: dataset/ScanData
   root_dir_color: dataset/LeafData
-  batch_size: 1
+  batch_size: 64
   ckpt_interval: 5000
   grad_clip: 0.025
   grad_clip_lat: 0.025
@@ -20,11 +20,14 @@ training:
   sigma_near: 0.001
   weight_decay: 0.02
   lambdas:
-    corresp: 500.0
     lat_reg: 5.0e-05
-    loss_reg_zero: 0.0
-    loss_rgb: 0.01
-  lr: 0.01
+    loss_discriminator: 1
+    w_distance: 1
+    # loss_D_fake: 1
+    loss_G: 1
+    gradient_penalty: 1
+  lambda_pen:  10
+  lr: 0.001
   lr_decay_factor: 0.2
   lr_decay_factor_lat: 0.2
   lr_decay_interval: 1000
