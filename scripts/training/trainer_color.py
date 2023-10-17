@@ -55,7 +55,7 @@ def save_grid_image(tensor, nrow=8, padding=2):
 
     im = Image.fromarray(grid)
 
-    # im.save('grid_image.png')
+    #im.save('grid_image.png')
     return im
 
 def weights_init(m):
@@ -223,65 +223,70 @@ class ColorTrainer(object):
         real = real.permute(0,3,1,2).float()
         #label = torch.full((batch['rgb'].shape[0],), real_label, dtype=torch.float, device=self.device)
         output_real = self.discriminator(real).view(-1)
-        # errD_real = self.criterion(output_real, real_label)
-        # errD_real.backward()
+        errD_real = self.criterion(output_real, real_label)
+        errD_real.backward()
 
         # fake
         fake = self.renderer(point_cloud)
 
-        #label.fill_(fake_label)
+        # label.fill_(fake_label)
         fake = fake.permute(0,3,1,2)
         output_fake = self.discriminator(fake.detach()).view(-1)
-        # errD_fake = self.criterion(output_fake, fake_label)
-        # errD_fake.backward()
-        gradient_penalty = compute_gradient_penalty(real, fake.detach(), self.discriminator, self.cfg['lambda_pen'],device=self.device)
-        loss_w = torch.mean(output_fake - output_real + gradient_penalty)
+        errD_fake = self.criterion(output_fake, fake_label)
+        errD_fake.backward()
+        errD = errD_real + errD_fake
+        #gradient_penalty = compute_gradient_penalty(real, fake.detach(), self.discriminator, self.cfg['lambda_pen'],device=self.device)
+        #loss_w = torch.mean(output_fake - output_real + gradient_penalty)
 
-        loss_w.backward()
+       #loss_w.backward()
         self.optimizer_D.step()
-        wdist = torch.mean(output_real - output_fake)
-        loss_dict = {'w_distance': wdist,
-                     'gradient_penalty': gradient_penalty.mean()}
+       # wdist = torch.mean(output_real - output_fake)
+        loss_dict = {'loss_D_real': errD_real,
+                     'loss_D_fake': errD_fake,}
+                   #  'gradient_penalty': gradient_penalty.mean()}
 
         
         # train generator
+        for i in range(5):
+            for p in self.discriminator.parameters():  # reset requires_grad
+                p.requires_grad = False
+            self.optimizer_decoder.zero_grad()
+            color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
+                                decoder=self.decoder, device=self.device,
+                                latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
+            point_cloud = Pointclouds(points=batch['points'].to(self.device).to(dtype=torch.float32), features=color)
+            fake = self.renderer(point_cloud)   
+            fake = fake.permute(0,3,1,2)
+            # label.fill_(real_label)
+            loss_G = self.criterion(self.discriminator(fake).view(-1), real_label)
+            #output_fake = self.discriminator(fake).view(-1)
+            
+            # mse loss
+            mask = (fake != 0 ).float()
+            loss_mse = self.mse(fake * mask, real*mask)/mask.sum()
+            
+            # perceptual loss
+            loss_per = perceptual_loss(vgg=self.vgg, fake=fake, real=real)
+            
+            
+            #loss_G = - torch.mean(output_fake)
+            loss = loss_G + self.cfg['lambdas']['loss_mse'] * loss_mse   # + self.cfg['lambdas']['loss_per'] * loss_per
+            if i<4:
+                loss.backward(retain_graph=True)
+            else:
+                loss.backward()
+            # if self.cfg['grad_clip'] is not None:
+            #     torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
 
-        for p in self.discriminator.parameters():  # reset requires_grad
-            p.requires_grad = False
-        self.optimizer_decoder.zero_grad()
-        color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
-                            decoder=self.decoder, device=self.device,
-                            latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
-        point_cloud = Pointclouds(points=batch['points'].to(self.device).to(dtype=torch.float32), features=color)
-        fake = self.renderer(point_cloud)   
-        fake = fake.permute(0,3,1,2)
-        # label.fill_(real_label)
-        # loss_d = self.criterion(self.discriminator(fake,sigmoid=True).view(-1), real_label)
-        output_fake = self.discriminator(fake).view(-1)
-        
-        # mse loss
-        mask = (fake != 0 ).float()
-        loss_mse = self.mse(fake * mask, real*mask)/mask.sum()
-        
-        # perceptual loss
-        loss_per = perceptual_loss(vgg=self.vgg, fake=fake, real=real)
-        
-        
-        loss_G = - torch.mean(output_fake)
-        loss = loss_G + self.cfg['lambdas']['loss_mse'] * loss_mse   # + self.cfg['lambdas']['loss_per'] * loss_per
-        loss.backward()
-        # if self.cfg['grad_clip'] is not None:
-        #     torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
+            if self.cfg['grad_clip_lat'] is not None:
+                torch.nn.utils.clip_grad_norm_(self.latent_color.parameters(), max_norm=self.cfg['grad_clip_lat'])
 
-        if self.cfg['grad_clip_lat'] is not None:
-            torch.nn.utils.clip_grad_norm_(self.latent_color.parameters(), max_norm=self.cfg['grad_clip_lat'])
-
-        self.optimizer_decoder.step()
-        self.optimizer_latent.step()
+            self.optimizer_decoder.step()
+            self.optimizer_latent.step()
         fake_result = save_grid_image(fake)
         real_result = save_grid_image(real)
-        loss_dict.update({'loss_G': loss_G,
-                          'loss_mse': loss_mse,})
+        loss_dict.update({'loss_G': loss_G,})
+                      #     'loss_mse': loss_mse,})
         
 
         return loss_dict    , fake_result, real_result
