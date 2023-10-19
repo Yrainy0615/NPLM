@@ -2,7 +2,7 @@ from scripts.model.deepSDF import DeepSDF, DeformationNetwork
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafDeformDataset, LeafColorDataset
+from scripts.dataset.sdf_dataset import Leaf2DShapeDataset, LeafDeformDataset, LeafColorDataset
 import yaml
 from scripts.model.EnsembledDeepSDF import FastEnsembleDeepSDFMirrored
 from scripts.training.trainer_shape import ShapeTrainer
@@ -10,8 +10,6 @@ from scripts.training.trainer_deform import DeformTrainer
 from scripts.training.trainer_color import ColorTrainer
 from scripts.model.discriminator import Discriminator
 import math
-from skimage.measure import marching_cubes
-import trimesh
 from matplotlib import pyplot as plt
 from scripts.model.reconstruction import mesh_from_logits, get_logits, create_grid_points_from_bounds
 import numpy as np
@@ -22,7 +20,7 @@ import wandb
 
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--mode', type=str, default='color', choices=['shape', 'deformation','viz_shape', 'color'], help='training mode')
+parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape', 'color'], help='training mode')
 parser.add_argument('--gpu', type=int, default=3, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 parser.add_argument('--output', type=str, default='shape', help='output directory')
@@ -36,12 +34,12 @@ if args.mode == "shape":
         config = 'NPLM/scripts/configs/npm.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
         wandb.init(project='NPLM', name =args.wandb)
-        trainset = LeafShapeDataset(mode='train',
+        trainset = Leaf2DShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                             batch_size=CFG['training']['batch_size'],
                             sigma_near=CFG['training']['sigma_near'],
-                            root_dir=CFG['training']['root_dir'])
+                            root_dir=CFG['training']['root_dir_color'])
         trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=2)
         decoder = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],

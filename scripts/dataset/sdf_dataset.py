@@ -171,6 +171,46 @@ class LeafColorDataset(Dataset):
                     'idx': np.array([index]),}
         return ret_dict
 
+class Leaf2DShapeDataset(Dataset):
+    def __init__(self,
+                 mode: Literal['train','val'],
+                 n_supervision_points_face: int,
+                 n_supervision_points_non_face: int,
+                 batch_size: int,
+                 sigma_near: float,
+                 root_dir: str):
+        self.manager = LeafImageManger(root_dir)
+        self.mode = mode
+        self.batch_size = batch_size
+        self.n_supervision_points_face = n_supervision_points_face
+        self.n_supervision_points_non_face  = n_supervision_points_non_face
+        self.sigma_near = sigma_near
+        self.all_mesh= self.manager.get_all_mesh()
+        self.all_mask = self.manager.get_all_mask()
+        self.species_to_idx = self.manager.get_species_to_idx()
+    
+    def __len__(self):
+        return len(self.all_mesh)
+    
+    def __getitem__(self, index):
+        mesh_file = self.all_mesh[index]
+        dict = self.manager.extract_info_from_meshfile(mesh_file)
+        mesh = dict['mesh']
+        sample = sample_surface(mesh,n_samps=3000)
+        sup_points = sample['points']
+      
+        sup_grad_far = uniform_ball(self.n_supervision_points_face //8, rad=0.5)
+        sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
+        sup_grad_near_udf = np.abs(igl.signed_distance(sup_grad_near,mesh.vertex_data.positions, mesh.face_data.vertex_ids)[0])
+        ret_dict = {'points': sup_points,
+                    'sup_grad_far': sup_grad_far,
+                    'sup_grad_near': sup_grad_near,
+                    'sup_grad_near_udf': sup_grad_near_udf,
+                    'spc': self.species_to_idx[dict['species']],
+                    'normals': sample['normals'],
+                    'idx': np.array([index]),}
+        return ret_dict
+
 
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
@@ -187,7 +227,7 @@ if __name__ == "__main__":
     #                            batch_size=CFG['training']['batch_size'],
     #                            sigma_near=CFG['training']['sigma_near'],
     #                            root_dir=CFG['training']['root_dir'])
-    dataset = LeafColorDataset(mode='train',    
+    dataset = Leaf2DShapeDataset(mode='train',    
                                  n_supervision_points_face=CFG['training']['npoints_decoder'],
                                  n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                                  batch_size=CFG['training']['batch_size'],
@@ -196,4 +236,4 @@ if __name__ == "__main__":
     
     dataloader = DataLoader(dataset, batch_size=1,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))
-
+   

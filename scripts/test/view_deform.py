@@ -7,7 +7,9 @@ import os
 import pyvista as pv
 from matplotlib import pyplot as plt
 import random
-
+import numpy as np
+import io
+from PIL import Image
 def save_mesh_image_with_camera(vertices, faces, filename="mesh.png"):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -53,7 +55,7 @@ if __name__ == "__main__":
         )
 
     
-    checkpoint_shape = torch.load('checkpoints/shape_epoch_30000.tar')
+    checkpoint_shape = torch.load('checkpoints/shape_epoch_5000.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape.eval()
@@ -64,7 +66,7 @@ if __name__ == "__main__":
     decoder.eval()
     decoder = decoder.to(device)
     
-    out_dir = 'sample_result/deform_new'
+    out_dir = 'sample_result/shape_cg_1019'
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
     mini = [-.95, -.95, -.95]
@@ -74,12 +76,13 @@ if __name__ == "__main__":
     grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
     decoder = decoder.to(device)
     lat_idx = lat_idx_all[1]
-
-    logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=2000)
-    mesh = mesh_from_logits(logits, mini, maxi,256)
     lat_def_all = checkpoint_deform['latent_deform_state_dict']['weight']
+    # logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=2000)
+    # mesh = mesh_from_logits(logits, mini, maxi,256)
+
     
-    viz = 'interpolation'
+    viz = 'generation'
+    viz_deform = False
     if viz == 'random':
     # generate deformation
         for i in range(lat_def_all.shape[1]):
@@ -106,6 +109,42 @@ if __name__ == "__main__":
             print('done mcubes')
             save_mesh_image_with_camera(deform.vertices, deform.faces, filename=out_dir + '/deform_{:04d}.png'.format(i))
 
-    
-    
-    
+    if viz == 'generation':
+        images = []
+        for i in range(7):
+            lat_idx = lat_idx_all[i]
+            logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=8000)
+            mesh = mesh_from_logits(logits, mini, maxi,256)
+            basename = out_dir + '/shape_{:04d}.ply'.format(i)
+            mesh.export(basename)
+            print(f'save mesh {basename}')
+  
+
+            if viz_deform:
+                for j in range(lat_def_all.shape[0]):
+                    deform_file =out_dir + '/shape_{:04d}_deform_{:04d}.ply'.format(i,j)
+                    if not os.path.exists(deform_file):
+                        lat_def = lat_def_all[j]
+                        lat_rep = torch.cat([lat_idx.unsqueeze(0), lat_def.unsqueeze(0)], dim=-1)
+                    #  logits = get_logits(decoder, lat_rep, grid_points=grid_points,nbatch_points=8000)
+                
+                        deform =  deform_mesh(mesh=mesh,deformer=decoder,lat_rep=lat_def,anchors=None,lat_rep_shape=lat_idx)
+
+                        deform.export(deform_file)
+                        img_name = out_dir + '/shape_{:04d}_deform_{:04d}.png'.format(i,j)
+                        save_mesh_image_with_camera(deform.vertices, deform.faces, filename=img_name)
+
+                        data_sample = {
+                            'latent_shape': lat_idx,
+                            'latent_def': lat_def,
+                            'mesh_deform':  deform_file,
+                            'img': img_name,
+                            
+                        }
+                        np.save(out_dir + '/shape_{:04d}_deform_{:04d}.npy'.format(i,j), data_sample)
+
+
+                
+
+            
+            

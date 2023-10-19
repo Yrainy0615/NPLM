@@ -33,6 +33,7 @@ class DeepSDF(nn.Module):
         self.num_layers = len(dims)
         self.skip_in = [nlayers//2]
         self.num_freq_bands = num_freq_bands
+      #  self.mapping = MappingNet(lat_dim, lat_dim)
         if num_freq_bands is not None:
             fun = lambda x: 2 ** x
             self.freq_bands = fun(torch.arange(num_freq_bands))
@@ -63,6 +64,7 @@ class DeepSDF(nn.Module):
             self.activation = nn.ReLU()
 
     def forward(self, xyz, lat_rep, anchors=None):
+     #   lat_rep = self.mapping(lat_rep)
 
         if self.num_freq_bands is not None:
             pos_embeds = [xyz]
@@ -115,6 +117,19 @@ def sample_point_feature(q, p, fea, var=0.1**2, background=False):
     #c_out = weight @ fea  # B x M x c_dim
     c_out = (weight.unsqueeze(-1) * fea).sum(dim=2)
     return c_out
+
+class MappingNet(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dim=1024,nlayers=8):
+        super(MappingNet, self).__init__()
+        layers = [nn.Linear(input_dim, hidden_dim), nn.LeakyReLU(0.2, inplace=True)]
+        for _ in range(nlayers - 2):
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+        layers.append(nn.Linear(hidden_dim, output_dim))
+        self.mapping = nn.Sequential(*layers)
+        
+    def forward(self,x):
+        return self.mapping(x)
 
 
 class DeformationNetwork(nn.Module):

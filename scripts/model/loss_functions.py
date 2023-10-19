@@ -4,14 +4,14 @@ import numpy as np
 from scripts.model.diff_operators import gradient    
 
 
-def compute_loss(batch, decoder, latent_idx, device):
+def compute_loss(batch, decoder, latent_idx, latent_spc,device):
     batch_cuda_npm = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
 
     idx = batch.get('idx').to(device)
-    # spc = batch.get('species').to(device)
-    glob_cond = latent_idx(idx) # 1,1,512
-    # glob_cond_spc = latent_spc(spc)
-    # glob_cond = torch.cat((glob_cond_idx,glob_cond_spc.unsqueeze(1)),dim=2)
+    spc = batch.get('spc').to(device)
+    glob_cond_idx = latent_idx(idx) # 1,1,512
+    glob_cond_spc = latent_spc(spc)
+    glob_cond = torch.cat((glob_cond_idx,glob_cond_spc.unsqueeze(1)),dim=2)
     loss_dict = actual_compute_loss(batch_cuda_npm, decoder, glob_cond)
 
     return loss_dict
@@ -50,20 +50,20 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond):
     surf_sdf_loss = torch.abs(pred_surface).squeeze()
     #surf_sdf_loss_outer = torch.abs(pred_surface_outer).squeeze()
 
-    surf_normal_loss = (gradient_surface - batch_cuda['normals']).norm(2, dim=-1)
+    #surf_normal_loss = (gradient_surface - batch_cuda['normals']).norm(2, dim=-1)
     # surf_normal_loss_outer = torch.clamp((gradient_surface_outer - batch_cuda['normals_non_face']).norm(2, dim=-1),
     #                                      None, 0.75) / 2
 
     #  udf loss
     udf_near_loss = F.mse_loss(udf_gt_near, udf_pred_near)
     
-    surf_grad_loss = torch.abs(gradient_surface.norm(dim=-1) - 1)
+   # surf_grad_loss = torch.abs(gradient_surface.norm(dim=-1) - 1)
     # surf_grad_loss_outer = torch.abs(gradient_surface_outer.norm(dim=-1) - 1)
 
     space_sdf_loss = torch.exp(-1e1 * torch.abs(pred_space_far))
-    space_grad_loss_far = torch.abs(gradient_space_far.norm(dim=-1) - 1)
-    space_grad_loss_near = torch.abs(gradient_space_near.norm(dim=-1) - 1)
-    grad_loss = torch.cat([surf_grad_loss, space_grad_loss_far, space_grad_loss_near], dim=-1)
+   # space_grad_loss_far = torch.abs(gradient_space_far.norm(dim=-1) - 1)
+    #space_grad_loss_near = torch.abs(gradient_space_near.norm(dim=-1) - 1)
+    #grad_loss = torch.cat([surf_grad_loss, space_grad_loss_far, space_grad_loss_near], dim=-1)
 
     #grad_loss = torch.cat([surf_grad_loss, surf_grad_loss_outer, space_grad_loss_far, space_grad_loss_near], dim=-1)
 
@@ -109,9 +109,9 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond):
         #         'lat_reg': lat_mag.mean()}
         # return ret_dict
         ret_dict = {'surf_sdf': torch.mean(surf_sdf_loss),
-                    'normals': torch.mean(surf_normal_loss),
+         
                     'space_sdf': torch.mean(space_sdf_loss),
-                    'grad': torch.mean(grad_loss),
+ 
                     'near_udf': torch.mean(udf_near_loss),
                     'lat_reg':lat_mag.mean()}
         return ret_dict
@@ -359,3 +359,18 @@ def perceptual_loss(fake, real,vgg):
     real_features = layers['relu2_2'](real)
     loss = F.mse_loss(fake_features, real_features)/ (32*32)
     return loss
+
+
+def inversion_loss(batch, encoder, decoder_shape, decoder_deform,device):
+    batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    points_surface = batch_cuda['points_surface'].clone().detach().requires_grad_()
+    points_noise = batch_cuda['points_noise'].clone().detach().requires_grad_()
+    points = torch.concat([points_surface,points_noise],dim=1)
+    latent_shape_pred, latent_deform_pred = encoder(points.permute(0,2,1))
+    loss_latent_shape = F.mse_loss(latent_shape_pred, batch_cuda['latent_shape'])
+    loss_latent_deform = F.mse_loss(latent_deform_pred, batch_cuda['latent_deform'])
+    loss_dict = {
+        'loss_latent_shape': loss_latent_shape,
+        'loss_latent_deform': loss_latent_deform,
+    }
+    return loss_dict

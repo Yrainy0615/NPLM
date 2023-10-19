@@ -1,0 +1,23 @@
+shape_decoder: 
+  decoder_lat_dim: 512
+  decoder_hidden_dim: 1024
+  decoder_nlayers: 8
+
+training:
+  root_dir: sample_result/inversion_train
+  n_samples: 2500
+  n_sample_noise: 1000
+  save_path: checkpoints/inversion
+  batch_size: 32
+  ckpt_interval: 5000
+  sigma_near: 0.01
+  checkpoint_shape: checkpoints/shape/shape_epoch_10000.tar
+  checkpoint_deform: checkpoints/deform_epoch_30000.tar
+  checkpoint_encoder: checkpoints/encoder_epoch_5000.tar
+  lr: 0.0005
+  weight_decay: 0.02
+  lr_decay_factor: 0.5
+  lr_decay_interval: 1000
+  lambdas:
+    loss_latent_shape: 1
+    loss_latent_deform: 1
