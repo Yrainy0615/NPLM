@@ -1,14 +1,23 @@
-import numpy as np
-import matplotlib.pyplot as plt
+from pytorch3d.loss import chamfer_distance
+from pytorch3d.renderer import (
+    look_at_view_transform,
+    FoVPerspectiveCameras, 
+    PointLights, 
+    DirectionalLights, 
+    Materials, 
+    RasterizationSettings, 
+    MeshRenderer, 
+    MeshRasterizer,  
+    SoftPhongShader,
+    blending,
+    Textures
+)
+from pytorch3d.structures import Meshes
+from pytorch3d.loss import mesh_laplacian_smoothing
 
-# 读取 .npy 文件
-data = np.load("dataset/depth.npy")
+def mesh_to_depth(mesh, renderer):
+   
 
-
-depth_data = data[:,:]
-
-# 可视化深度数据
-plt.imshow(depth_data, cmap='gray')  # 使用灰度图
-plt.colorbar()
-plt.title("Depth Visualization")
-plt.show()
+if __name__ == "__main__":
+    file = 'dataset/ScanData/maple/Autumn_maple_leaf.004.obj'
+    MeshRenderer
