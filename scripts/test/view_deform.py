@@ -55,18 +55,19 @@ if __name__ == "__main__":
         )
 
     
-    checkpoint_shape = torch.load('checkpoints/shape_epoch_5000.tar')
+    checkpoint_shape = torch.load('checkpoints/cgshape_bs7_map/cgshape_epoch_25000.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
+    lat_spc_all = checkpoint_shape['latent_spc_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape.eval()
     decoder_shape.to(device)
     
     checkpoint_deform  = torch.load('checkpoints/deform_epoch_30000.tar')
-    decoder.load_state_dict(checkpoint_deform['decoder_state_dict'])
-    decoder.eval()
-    decoder = decoder.to(device)
+    # decoder.load_state_dict(checkpoint_deform['decoder_state_dict'])
+    # decoder.eval()
+    # decoder = decoder.to(device)
     
-    out_dir = 'sample_result/shape_cg_1019'
+    out_dir = 'sample_result/shape_cg_ep25000'
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
     mini = [-.95, -.95, -.95]
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     if viz == 'generation':
         images = []
         for i in range(7):
-            lat_idx = lat_idx_all[i]
+            lat_idx = torch.concat([lat_idx_all[i], lat_spc_all[i]]).to(device)
             logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=8000)
             mesh = mesh_from_logits(logits, mini, maxi,256)
             basename = out_dir + '/shape_{:04d}.ply'.format(i)

@@ -71,57 +71,49 @@ class MeshRender():
     def get_intrinsic(self):
         return self.renderer.rasterizer.cameras.get_projection_transform()._matrix
     
-    def viz_depth(depth_data,):
+    def viz_depth(self,depth_data,):
+        depth_data = depth_data.detach().cpu().squeeze(0).numpy()
         plt.imshow(depth_data, cmap='gray')  # 使用灰度图
         plt.colorbar()
         plt.title("Depth Visualization")
         plt.show()
     
     def depth_pts(self, depth):
-        width , height = depth.shape[0], depth.shape[1]
-        depth = depth.detach().cpu().squeeze().numpy()
-        fov =60
-        cx = width / 2
-        cy = height / 2
-        fx = cx / np.tan(fov / 2)
-        fy = cy / np.tan(fov / 2)
+        depth = depth.squeeze()
+        depth[depth == -1] = 0
 
-        row = height
-        col = width
-        # TODO check whether u or v is the column. depth[v, u] ???
-        u = np.array(list(np.ndindex((row, col)))).reshape(row, col, 2)[:, :, 0].squeeze()
-        v = np.array(list(np.ndindex((row, col)))).reshape(row, col, 2)[:, :, 0].squeeze()
+        sparse_depth = depth.to_sparse()
+        indices = sparse_depth.indices()
+        values = sparse_depth.values()
+        xy_depth = torch.cat((indices.T, values[..., None]), dim=-1)
+        # normalize xy to [-1,1]
+        # xy_depth[:, 0] -= 128
+        xy_depth[:, 0] /= 128 /2
+        # xy_depth[:, 1] -= 128
+        xy_depth[:, 1] /= 128 /2
 
-        X_ = (u - cx) / fx
-        X_ = X_[depth > -1]  # exclude infinity
-        Y_ = (v - cy) / fy * depth
-        Y_ = Y_[depth > -1]  # exclude infinity
-        depth_ = depth[depth > -1]  # exclude infinity
-
-        X = X_ * depth_
-        Y = Y_ * depth_
-        Z = depth_
-
-        coords_g = np.stack([X, Y, Z])  # shape: num_points * 3
-        pcd = Pointclouds(points=[coords_g])
-        # pcd.points = o3d.utility.Vector3dVector(coords_g.T)
-        # o3d.visualization.draw_geometries([pcd])
-        
+#points = cameras.unproject_points(xy_depth)
+        pts = self.cameras.unproject_points(xy_depth, world_coordinates=True)
+        return pts
+    
+    def pts_volume(self, pts):
+        pass
 
 if __name__ == "__main__":
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-    meshfile = '/home/yang/projects/parametric-leaf/dataset/ScanData/maple/Autumn_maple_leaf.005.obj'
+    meshfile = 'dataset/ScanData/maple/Autumn_maple_leaf.005.obj'
     mesh = load_objs_as_meshes([meshfile],device=device)
     renderer  = MeshRender(device=device)
     #fragments = renderer.rasterize(mesh)
 
     mask = renderer.get_mask(mesh)
     depth = renderer.get_depth(mesh)
-    #viz_depth(depth)
+    # renderer.viz_depth(depth)
     #sdf_grid = renderer.depth_sdf(depth)
    # K = renderer.get_intrinsic()
     #point_cloud = renderer.fast_from_depth_to_pointcloud(depth)
     point_cloud = renderer.depth_pts(depth)
+    point_cloud=point_cloud.view(-1,3)
     fig = plot_scene({
     "Pointcloud": {
         "person": Pointclouds([point_cloud])
