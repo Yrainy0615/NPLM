@@ -4,7 +4,6 @@ sys.path.append('NPLM/scripts')
 from dataset.DataManager import LeafImageManager
 import trimesh
 import numpy as np
-import open3d as o3d
 from sklearn.decomposition import PCA
 from scipy.spatial import cKDTree
 from matplotlib import pyplot as plt

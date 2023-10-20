@@ -33,7 +33,7 @@ def save_mesh_image_with_camera(vertices, faces):
     
     plt.close()
     return img
-def latent_to_mesh(decoder, latent_idx, device):
+def latent_to_mesh(decoder, latent_idx,device):
     mini = [-.95, -.95, -.95]
     maxi = [0.95, 0.95, 0.95]
     grid_points = create_grid_points_from_bounds(mini, maxi, 256)
@@ -56,7 +56,7 @@ class ShapeTrainer(object):
         torch.nn.init.normal_(
             self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )
-        self.latent_spc = torch.nn.Embedding(5, decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_spc = torch.nn.Embedding(7, decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
             self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )   
@@ -197,27 +197,12 @@ class ShapeTrainer(object):
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0:
                 self.save_checkpoint(epoch)
-            # if epoch %10 ==0:
-            #     images = []
-            #     for i in range(7):
-            #         mesh, img = latent_to_mesh(self.decoder,self.latent_idx.weight[i], self.device)
-            #         if mesh is not None:
-            #             images.append(img)
-
-            #         # Combine images into one
-            #             widths, heights = zip(*(i.size for i in images))
-            #             total_width = sum(widths)
-            #             max_height = max(heights)
-
-            #             new_img = Image.new('RGB', (total_width, max_height))
-
-            #             x_offset = 0
-            #             for img in images:
-            #                 new_img.paste(img, (x_offset, 0))
-            #                 x_offset += img.width
-
-            #             # Log the combined image with wandb
-            #             wandb.log({'shape': wandb.Image(new_img)})
+            if epoch %100 ==0:
+                lat = torch.concat([self.latent_idx.weight[5], self.latent_spc.weight[5]])
+                mesh, img = latent_to_mesh(self.decoder,lat, self.device)
+                    # Log the combined image with wandb
+                if img is not None:
+                    wandb.log({'shape': wandb.Image(img)})
               
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():
@@ -231,4 +216,3 @@ class ShapeTrainer(object):
                 
             
         
-

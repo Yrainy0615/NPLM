@@ -2,7 +2,7 @@ from scripts.model.deepSDF import DeepSDF, DeformationNetwork
 import argparse
 import torch
 from torch.utils.data import DataLoader
-from scripts.dataset.sdf_dataset import Leaf2DShapeDataset, LeafDeformDataset, LeafColorDataset
+from scripts.dataset.sdf_dataset import Leaf2DShapeDataset, LeafDeformDataset, LeafColorDataset, LeafShapeDataset
 import yaml
 from scripts.model.EnsembledDeepSDF import FastEnsembleDeepSDFMirrored
 from scripts.training.trainer_shape import ShapeTrainer
@@ -34,12 +34,12 @@ if args.mode == "shape":
         config = 'NPLM/scripts/configs/npm.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
         wandb.init(project='NPLM', name =args.wandb)
-        trainset = Leaf2DShapeDataset(mode='train',
+        trainset = LeafShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
                             batch_size=CFG['training']['batch_size'],
                             sigma_near=CFG['training']['sigma_near'],
-                            root_dir=CFG['training']['root_dir_color'])
+                            root_dir=CFG['training']['root_dir'])
         trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=2)
         decoder = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],

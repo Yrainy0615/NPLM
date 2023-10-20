@@ -77,7 +77,7 @@ class LeafShapeDataset(Dataset):
                     'sup_grad_near': sup_grad_near,
                     'sup_grad_near_udf': sup_grad_near_udf,
                     'idx': np.array([index]),
-                    'species': self.species_to_idx[species]}
+                    'spc': self.species_to_idx[species]}
         return ret_dict
        
 class LeafDeformDataset(Dataset):

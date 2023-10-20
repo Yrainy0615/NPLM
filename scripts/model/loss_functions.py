@@ -50,20 +50,20 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond):
     surf_sdf_loss = torch.abs(pred_surface).squeeze()
     #surf_sdf_loss_outer = torch.abs(pred_surface_outer).squeeze()
 
-    #surf_normal_loss = (gradient_surface - batch_cuda['normals']).norm(2, dim=-1)
+    surf_normal_loss = (gradient_surface - batch_cuda['normals']).norm(2, dim=-1)
     # surf_normal_loss_outer = torch.clamp((gradient_surface_outer - batch_cuda['normals_non_face']).norm(2, dim=-1),
     #                                      None, 0.75) / 2
 
     #  udf loss
     udf_near_loss = F.mse_loss(udf_gt_near, udf_pred_near)
     
-   # surf_grad_loss = torch.abs(gradient_surface.norm(dim=-1) - 1)
+    surf_grad_loss = torch.abs(gradient_surface.norm(dim=-1) - 1)
     # surf_grad_loss_outer = torch.abs(gradient_surface_outer.norm(dim=-1) - 1)
 
     space_sdf_loss = torch.exp(-1e1 * torch.abs(pred_space_far))
-   # space_grad_loss_far = torch.abs(gradient_space_far.norm(dim=-1) - 1)
-    #space_grad_loss_near = torch.abs(gradient_space_near.norm(dim=-1) - 1)
-    #grad_loss = torch.cat([surf_grad_loss, space_grad_loss_far, space_grad_loss_near], dim=-1)
+    space_grad_loss_far = torch.abs(gradient_space_far.norm(dim=-1) - 1)
+    space_grad_loss_near = torch.abs(gradient_space_near.norm(dim=-1) - 1)
+    grad_loss = torch.cat([surf_grad_loss, space_grad_loss_far, space_grad_loss_near], dim=-1)
 
     #grad_loss = torch.cat([surf_grad_loss, surf_grad_loss_outer, space_grad_loss_far, space_grad_loss_near], dim=-1)
 
@@ -109,9 +109,9 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond):
         #         'lat_reg': lat_mag.mean()}
         # return ret_dict
         ret_dict = {'surf_sdf': torch.mean(surf_sdf_loss),
-         
+                    'normals': torch.mean(surf_normal_loss),
                     'space_sdf': torch.mean(space_sdf_loss),
- 
+                    'grad': torch.mean(grad_loss),
                     'near_udf': torch.mean(udf_near_loss),
                     'lat_reg':lat_mag.mean()}
         return ret_dict
