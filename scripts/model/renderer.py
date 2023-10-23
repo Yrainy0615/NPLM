@@ -24,7 +24,6 @@ from matplotlib import pyplot as plt
 import numpy as np
 from pytorch3d.vis.plotly_vis import AxisArgs, plot_batch_individually, plot_scene
 from pytorch3d.ops import add_pointclouds_to_volumes
-import open3d as o3d
 import mcubes
 from pytorch3d.ops.marching_cubes import marching_cubes_naive
 

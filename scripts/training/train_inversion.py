@@ -1,6 +1,6 @@
 import torch
 import yaml
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 from scripts.dataset.inversion_dataset import InversionDataset
 from scripts.model.deepSDF import DeepSDF
 from scripts.model.point_encoder import PCAutoEncoder
@@ -10,11 +10,10 @@ import wandb
 from scripts.model.loss_functions import inversion_loss
 
 class InversionTrainer():
-    def __init__(self, cfg, decoder_shape, decoder_deform, dataloader, device):
+    def __init__(self, cfg, trainloader, testloader, device):
         self.cfg = cfg['training']
-        self.decoder_shape = decoder_shape
-        self.decoder_deform = decoder_deform
-        self.trainloader = dataloader
+        self.trainloader = trainloader
+        self.testloader = testloader
         self.device = device
         self.encoder = PCAutoEncoder()
         self.encoder.to(device)
@@ -43,7 +42,7 @@ class InversionTrainer():
         self.encoder.train()
         self.optimizer.zero_grad()
 
-        loss_dict = inversion_loss(batch, self.encoder, self.decoder_shape, self.decoder_deform,self.device)
+        loss_dict = inversion_loss(batch, self.encoder,self.device)
         loss_total = 0
         for key in loss_dict.keys():
             loss_total += self.cfg['lambdas'][key] * loss_dict[key]
@@ -84,12 +83,23 @@ class InversionTrainer():
             for k in sum_loss_dict:
                 print_str += " " + k + " {:06.4f}".format(sum_loss_dict[k])
             print(print_str)
+            # add test loss
+            sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
+            sum_loss_dict.update({'loss':0.0})
+            for batch in self.testloader:
+                loss_dict = inversion_loss(batch, self.encoder,self.device)
+                # 如何区分test的loss变量名
+                
+                for k in loss_dict:
+                    sum_loss_dict[k] += loss_dict[k]
+                    test_values = {"test_" + key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}                
+                    wandb.log(test_values)
 
 
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method('spawn')
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-    parser.add_argument('--gpu', type=int, default=3, help='gpu index')
+    parser.add_argument('--gpu', type=int, default=7, help='gpu index')
     parser.add_argument('--wandb', type=str, default='inversion_latent_mse', help='run name of wandb')
 
     # setting
@@ -104,9 +114,13 @@ if __name__ == "__main__":
     dataset = InversionDataset(root_dir=CFG['training']['root_dir'],
                                  n_samples=CFG['training']['n_samples'],
                                  n_sample_noise=CFG['training']['n_sample_noise'],
+                                 device=device,
                                  sigma_near=CFG['training']['sigma_near'])
-    dataloader = DataLoader(dataset, batch_size=CFG['training']['batch_size'],shuffle=False, num_workers=2)
-    
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    trainloader = DataLoader(train_dataset, batch_size=CFG['training']['batch_size'],shuffle=False, num_workers=2)
+    testloader = DataLoader(val_dataset, batch_size=CFG['training']['batch_size'],shuffle=False, num_workers=2)
     # initialize for shape decoder
     decoder_shape = DeepSDF(
             lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
@@ -120,16 +134,17 @@ if __name__ == "__main__":
     decoder_shape.to(device)
     
     # initialize for deformation decoder
-    decoder_deform = DeepSDF(lat_dim=512+200,
-                    hidden_dim=1024,
-                    geometric_init=False,
-                    out_dim=3,
-                    input_dim=3)
-    checkpoint_deform  = torch.load(CFG['training']['checkpoint_deform'])
-    decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
-    decoder_deform.eval()
-    decoder_deform.to(device)
+    # decoder_deform = DeepSDF(lat_dim=512+200,
+    #                 hidden_dim=1024,
+    #                 geometric_init=False,
+    #                 out_dim=3,
+    #                 input_dim=3)
+    # checkpoint_deform  = torch.load(CFG['training']['checkpoint_deform'])
+    # decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
+    # decoder_deform.eval()
+    # decoder_deform.to(device)
     
+
     # initialize trainer
-    trainer = InversionTrainer(CFG, decoder_shape, decoder_deform, dataloader, device)
+    trainer = InversionTrainer(CFG, trainloader,testloader, device)
     trainer.train(10001)

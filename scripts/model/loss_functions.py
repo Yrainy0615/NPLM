@@ -12,13 +12,13 @@ def compute_loss(batch, decoder, latent_idx, latent_spc,device):
     glob_cond_idx = latent_idx(idx) # 1,1,512
     glob_cond_spc = latent_spc(spc)
     glob_cond = torch.cat((glob_cond_idx,glob_cond_spc.unsqueeze(1)),dim=2)
-    loss_dict = actual_compute_loss(batch_cuda_npm, decoder, glob_cond)
+    loss_dict = actual_compute_loss(batch_cuda_npm, decoder, glob_cond_idx,glob_cond_spc)
 
     return loss_dict
 
-def actual_compute_loss(batch_cuda, decoder, glob_cond):
+def actual_compute_loss(batch_cuda, decoder, glob_cond, glob_cond2):
     anchor_preds = None
-
+    glob_cond = torch.cat((glob_cond,glob_cond2.unsqueeze(1)),dim=2)
 
     # prep
     sup_surface = batch_cuda['points'].clone().detach().requires_grad_() # points on face surf
@@ -68,7 +68,8 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond):
     #grad_loss = torch.cat([surf_grad_loss, surf_grad_loss_outer, space_grad_loss_far, space_grad_loss_near], dim=-1)
 
 
-    lat_mag = torch.norm(glob_cond, dim=-1) ** 2
+    lat_idx = torch.norm(glob_cond, dim=-1) ** 2
+    lat_spc = torch.norm(glob_cond2, dim=-1) ** 2
     glob_cond = glob_cond.squeeze(1)
     if hasattr(decoder, 'lat_dim_glob'):
         loc_lats_symm = glob_cond[:,
@@ -87,33 +88,14 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond):
         symm_dist = None
         middle_dist = None
 
-    if anchors is not None:
-        loss_anchors = (anchors - batch_cuda['gt_anchors']).square().mean()
 
-        # ret_dict =  {'surf_sdf': torch.mean(torch.cat([surf_sdf_loss, surf_sdf_loss_outer], dim=-1)),
-        #         # 'normals': torch.mean(
-        #         #     torch.cat([surf_normal_loss.squeeze(), surf_normal_loss_outer.squeeze()], dim=-1)),
-        #         'space_sdf': torch.mean(space_sdf_loss),
-        #         'grad': torch.mean(grad_loss),
-        #         'lat_reg': lat_mag.mean(),
-        #         'anchors': loss_anchors,
-        #         'symm_dist': symm_dist,
-        #         'middle_dist': middle_dist, }
-        # return ret_dict
-    else:
-        # ret_dict =  {'surf_sdf': torch.mean(torch.cat([surf_sdf_loss, surf_sdf_loss_outer], dim=-1)),
-        #         'normals': torch.mean(
-        #             torch.cat([surf_normal_loss.squeeze(), surf_normal_loss_outer.squeeze()], dim=-1)),
-        #         'space_sdf': torch.mean(space_sdf_loss),
-        #         'grad': torch.mean(grad_loss),
-        #         'lat_reg': lat_mag.mean()}
-        # return ret_dict
         ret_dict = {'surf_sdf': torch.mean(surf_sdf_loss),
                     'normals': torch.mean(surf_normal_loss),
                     'space_sdf': torch.mean(space_sdf_loss),
                     'grad': torch.mean(grad_loss),
                     'near_udf': torch.mean(udf_near_loss),
-                    'lat_reg':lat_mag.mean()}
+                    'lat_idx':lat_idx.mean(),
+                    'lat_spc':lat_spc.mean(),}
         return ret_dict
 
 
@@ -361,11 +343,11 @@ def perceptual_loss(fake, real,vgg):
     return loss
 
 
-def inversion_loss(batch, encoder, decoder_shape, decoder_deform,device):
+def inversion_loss(batch, encoder,device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-    points_surface = batch_cuda['points_surface'].clone().detach().requires_grad_()
-    points_noise = batch_cuda['points_noise'].clone().detach().requires_grad_()
-    points = torch.concat([points_surface,points_noise],dim=1)
+    points = batch_cuda['points'].clone().detach().requires_grad_()
+   
+  
     latent_shape_pred, latent_deform_pred = encoder(points.permute(0,2,1))
     loss_latent_shape = F.mse_loss(latent_shape_pred, batch_cuda['latent_shape'])
     loss_latent_deform = F.mse_loss(latent_deform_pred, batch_cuda['latent_deform'])

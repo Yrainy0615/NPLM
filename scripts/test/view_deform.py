@@ -55,7 +55,7 @@ if __name__ == "__main__":
         )
 
     
-    checkpoint_shape = torch.load('checkpoints/cgshape_bs7_map/cgshape_epoch_25000.tar')
+    checkpoint_shape = torch.load('checkpoints/cg_bs1/cgshape_epoch_30000.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
     lat_spc_all = checkpoint_shape['latent_spc_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     # decoder.eval()
     # decoder = decoder.to(device)
     
-    out_dir = 'sample_result/shape_cg_ep25000'
+    out_dir = 'sample_result/shape_1022'
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
     mini = [-.95, -.95, -.95]

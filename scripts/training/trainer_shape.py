@@ -136,7 +136,7 @@ class ShapeTrainer(object):
             #     param_group["lr"] = lr
         
     def save_checkpoint(self, epoch):
-        path = self.checkpoint_path + '/2dshape_epoch_{}.tar'.format(epoch)
+        path = self.checkpoint_path + '/cgshape_epoch__1023{}.tar'.format(epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
@@ -198,11 +198,12 @@ class ShapeTrainer(object):
             if epoch % ckp_interval ==0:
                 self.save_checkpoint(epoch)
             if epoch %100 ==0:
-                lat = torch.concat([self.latent_idx.weight[5], self.latent_spc.weight[5]])
+                lat = torch.concat([self.latent_idx.weight[6], self.latent_spc.weight[6]])
                 mesh, img = latent_to_mesh(self.decoder,lat, self.device)
                     # Log the combined image with wandb
                 if img is not None:
                     wandb.log({'shape': wandb.Image(img)})
+                    mesh.export('sample_result/shape_{:04d}.ply'.format(epoch))
               
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():
