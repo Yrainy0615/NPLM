@@ -33,7 +33,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if args.mode == "shape":
         config = 'NPLM/scripts/configs/npm.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
-        wandb.init(project='NPLM', name =args.wandb)
+        #wandb.init(project='NPLM', name =args.wandb)
         trainset = Leaf2DShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
