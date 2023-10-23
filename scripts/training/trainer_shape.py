@@ -56,10 +56,12 @@ class ShapeTrainer(object):
         torch.nn.init.normal_(
             self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )
-        self.latent_spc = torch.nn.Embedding(7, decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_spc = torch.nn.Embedding(trainset.num_neutral, decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
             self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )   
+        print(self.latent_idx.weight.shape)
+        print(self.latent_spc.weight.shape)
         self.trainloader = trainloader
 
         self.device = device
@@ -136,7 +138,7 @@ class ShapeTrainer(object):
             #     param_group["lr"] = lr
         
     def save_checkpoint(self, epoch):
-        path = self.checkpoint_path + '/cgshape_epoch__1023{}.tar'.format(epoch)
+        path = self.checkpoint_path + '/cgshape_1023wo_epoch__{}.tar'.format(epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
@@ -203,7 +205,7 @@ class ShapeTrainer(object):
                     # Log the combined image with wandb
                 if img is not None:
                     wandb.log({'shape': wandb.Image(img)})
-                    mesh.export('sample_result/shape_{:04d}.ply'.format(epoch))
+                    mesh.export('sample_result/shape_noudf_{:04d}.ply'.format(epoch))
               
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():

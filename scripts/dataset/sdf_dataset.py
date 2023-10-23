@@ -42,6 +42,7 @@ class LeafShapeDataset(Dataset):
         self.n_supervision_points_non_face  = n_supervision_points_non_face
         self.sigma_near = sigma_near
         self.all_neutral = self.manager.get_all_neutral()
+        self.num_neutral = len(self.all_neutral)
         # create a dictionary to map species to index
         self.species_to_idx = {species:idx for idx, species in enumerate(self.all_species)}
         

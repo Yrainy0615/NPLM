@@ -19,8 +19,8 @@ training:
   lr_decay_interval: 5000
   lr_decay_interval_lat: 5000
 
-  npoints_decoder: 2000
-  npoints_decoder_non: 1000
+  npoints_decoder: 1500
+  npoints_decoder_non: 750
 
   sigma_near: 0.001
   weight_decay: 0.02
