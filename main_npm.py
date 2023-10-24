@@ -14,7 +14,7 @@ from matplotlib import pyplot as plt
 from scripts.model.reconstruction import mesh_from_logits, get_logits, create_grid_points_from_bounds
 import numpy as np
 import pyvista as pv
-import os
+import os       
 import wandb
 
 
@@ -33,7 +33,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if args.mode == "shape":
         config = 'NPLM/scripts/configs/npm.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
-        #wandb.init(project='NPLM', name =args.wandb)
+        wandb.init(project='NPLM', name =args.wandb)
         trainset = Leaf2DShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
@@ -92,7 +92,7 @@ if args.mode == "color":
         config = 'NPLM/scripts/configs/npm_color.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
 
-        wandb.init(project='NPLM', name =args.wandb)
+        #wandb.init(project='NPLM', name =args.wandb)
         trainset = LeafColorDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],

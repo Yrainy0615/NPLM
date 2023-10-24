@@ -1,7 +1,7 @@
 import os
 import sys
 sys.path.append('NPLM/scripts')
-from dataset.DataManager import LeafImageManager
+from scripts.dataset.DataManager import LeafImageManger
 import trimesh
 import numpy as np
 import open3d as o3d
@@ -188,11 +188,11 @@ def read_vertex_groups_from_csv(filepath):
 class LeafRegistration():
     def __init__(self, root_dir, template,vertex_info):
         self.root_dir = root_dir
-        self.manager = LeafImageManager(root_dir)
+        self.manager = LeafImageManger(root_dir)
         self.species = [d for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))]
         self.all_mesh = self.manager.get_all_mesh()
         self.template = trimesh.load_mesh(template)
-        self.vertex_info = read_vertex_groups_from_csv(vertex_info)
+        # self.vertex_info = read_vertex_groups_from_csv(vertex_info)
         # build renderer
         R, t = look_at_view_transform(1, 90, 180)
         R = torch.nn.Parameter(R)
@@ -459,7 +459,7 @@ if __name__ == '__main__':
 
     vertex_info = 'dataset/vertex.csv'
 
-    mesh_dir = 'dataset/ScanData/yellow'
+    mesh_dir = 'dataset/LeafData/maple/healthy'
     #template = 'dataset/ScanData/yellow/Leaf_yellow.001.obj'  
     registrater  =LeafRegistration(root_dir, template, vertex_info)
     dirs = os.listdir(mesh_dir)
@@ -467,10 +467,10 @@ if __name__ == '__main__':
         filename = os.path.join(mesh_dir, dir)
         if '.obj' in filename:
             print(filename)
-            aligned_mesh = registrater.ARAP_rigistration(filename, template)
-            #aligned_mesh = registrater.ICP_rigid_registration(filename)
-            #aligned_mesh.export(filename)
-            aligned_mesh.export(filename[:-4]+'_aligned.obj')
+            #aligned_mesh = registrater.ARAP_rigistration(filename, template)
+            aligned_mesh = registrater.ICP_rigid_registration(filename)
+            aligned_mesh.export(filename)
+            #aligned_mesh.export(filename[:-4]+'_aligned.obj')
     
 
     pass

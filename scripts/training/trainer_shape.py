@@ -56,10 +56,12 @@ class ShapeTrainer(object):
         torch.nn.init.normal_(
             self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )
-        self.latent_spc = torch.nn.Embedding(5, decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_spc = torch.nn.Embedding(10, decoder.lat_dim//2, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(
             self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
         )   
+        print(self.latent_idx.weight.shape)
+        print(self.latent_spc.weight.shape)
         self.trainloader = trainloader
 
         self.device = device
@@ -136,7 +138,7 @@ class ShapeTrainer(object):
             #     param_group["lr"] = lr
         
     def save_checkpoint(self, epoch):
-        path = self.checkpoint_path + '/2dshape_epoch_{}.tar'.format(epoch)
+        path = self.checkpoint_path + '/2d_wo_udf_epoch_{}.tar'.format(epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
@@ -197,27 +199,13 @@ class ShapeTrainer(object):
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0:
                 self.save_checkpoint(epoch)
-            # if epoch %10 ==0:
-            #     images = []
-            #     for i in range(7):
-            #         mesh, img = latent_to_mesh(self.decoder,self.latent_idx.weight[i], self.device)
-            #         if mesh is not None:
-            #             images.append(img)
+            if epoch %100 ==0 and epoch >0:
+                lat = torch.concat([self.latent_idx.weight[0], self.latent_spc.weight[0]])
+                mesh, img = latent_to_mesh(self.decoder,lat, self.device)
+                if img is not None:
+                    wandb.log({'shape': wandb.Image(img)})
+                    mesh.export('sample_result/2dshape_map_{:04d}.ply'.format(epoch))
 
-            #         # Combine images into one
-            #             widths, heights = zip(*(i.size for i in images))
-            #             total_width = sum(widths)
-            #             max_height = max(heights)
-
-            #             new_img = Image.new('RGB', (total_width, max_height))
-
-            #             x_offset = 0
-            #             for img in images:
-            #                 new_img.paste(img, (x_offset, 0))
-            #                 x_offset += img.width
-
-            #             # Log the combined image with wandb
-            #             wandb.log({'shape': wandb.Image(new_img)})
               
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():

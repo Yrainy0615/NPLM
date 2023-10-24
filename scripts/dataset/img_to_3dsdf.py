@@ -330,8 +330,7 @@ def sdf2d_3d(sdf_image,viz_3d=False):
 
 if __name__ == "__main__":
         # 假设您的2D SDF是一个圆形，中心点在(50, 50)，半径是40
-    img_name = r'/home/yang/projects/parametric-leaf/dataset/LeafData/Bael/healthy/Bael_healthy_0001_mask_aligned.JPG'
-
+    img_name = 'dataset/LeafData/bael/healthy/Bael_healthy_0001_mask_aligned.JPG'
     mySDF2D = SDF2D(img_name)
     sdf_2d = mySDF2D.mask2sdf()
     # sdf_2d = cv2.imread('/home/yang/projects/parametric-leaf/dataset/LeafData/Basil/healthy/mask/output/0_sdf.png')
