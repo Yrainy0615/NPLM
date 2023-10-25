@@ -96,15 +96,6 @@ class DeepSDF(nn.Module):
 
 
 def sample_point_feature(q, p, fea, var=0.1**2, background=False):
-    # q: B x M x 3
-    # p: B x N x 3
-    # fea: B x N x c_dim
-    # p, fea = c
-
-    #print(q.shape)
-    #print(p.shape)
-    #print(fea.shape)
-    # distance betweeen each query point to the point cloud
     dist = -((p.unsqueeze(1).expand(-1, q.size(1), -1, -1) - q.unsqueeze(2)).norm(dim=3) + 10e-6) ** 2
     if background:
         dist_const = torch.ones_like(dist[:, :, :1])* (-0.2)#(-0.025) #hair 0.2

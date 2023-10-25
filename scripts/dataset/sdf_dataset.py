@@ -68,7 +68,8 @@ class LeafShapeDataset(Dataset):
         sup_normals = normals[sup_idx, :]
         
         # subsample points for gradient-constraint (near surface &  random in space)
-        sup_grad_far = uniform_ball(self.n_supervision_points_face //4, rad=0.5)
+        sup_grad_far = uniform_ball(self.n_supervision_points_face //8, rad=0.5)
+        sup_grad_far_udf = np.abs(igl.signed_distance(sup_grad_far,mesh.vertex_data.positions, mesh.face_data.vertex_ids)[0])
         sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
         sup_grad_near_udf = np.abs(igl.signed_distance(sup_grad_near,mesh.vertex_data.positions, mesh.face_data.vertex_ids)[0])
         
@@ -77,6 +78,7 @@ class LeafShapeDataset(Dataset):
                     'sup_grad_far': sup_grad_far,
                     'sup_grad_near': sup_grad_near,
                     'sup_grad_near_udf': sup_grad_near_udf,
+                    'sup_grad_far_udf': sup_grad_far_udf,
                     'idx': np.array([index]),
                     'spc': self.species_to_idx[species]}
         return ret_dict

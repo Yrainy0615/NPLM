@@ -26,21 +26,18 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond, glob_cond2):
     sup_grad_far = batch_cuda['sup_grad_far'].clone().detach().requires_grad_() # points in unifrm ball
     sup_grad_near = batch_cuda['sup_grad_near'].clone().detach().requires_grad_() # points near/off surface
     udf_gt_near = batch_cuda['sup_grad_near_udf'].clone().detach().requires_grad_() 
-    
+    udf_gt_far = batch_cuda['sup_grad_far_udf'].clone().detach().requires_grad_()
 
     # model computations
     pred_surface, anchors = decoder(sup_surface, glob_cond.repeat(1, sup_surface.shape[1], 1), anchor_preds)
-    # pred_surface_outer, anchors = decoder(sup_surface_outer, glob_cond.repeat(1, sup_surface_outer.shape[1], 1),
-    #                                       anchor_preds)
     pred_space_near, anchors = decoder(sup_grad_near, glob_cond.repeat(1, sup_grad_near.shape[1], 1), anchor_preds)
     udf_pred_near = torch.abs(pred_space_near).squeeze(2)
-
+    
     pred_space_far = decoder(sup_grad_far, glob_cond.repeat(1, sup_grad_far.shape[1], 1), anchor_preds)[0]
-
+    udf_pred_far = torch.abs(pred_space_far).squeeze(2)
 
     # normal computation
     gradient_surface = gradient(pred_surface, sup_surface)
-    # gradient_surface_outer = gradient(pred_surface_outer, sup_surface_outer)
     gradient_space_far = gradient(pred_space_far, sup_grad_far)
     gradient_space_near = gradient(pred_space_near, sup_grad_near)
 
@@ -60,7 +57,8 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond, glob_cond2):
     surf_grad_loss = torch.abs(gradient_surface.norm(dim=-1) - 1)
     # surf_grad_loss_outer = torch.abs(gradient_surface_outer.norm(dim=-1) - 1)
 
-    space_sdf_loss = torch.exp(-1e1 * torch.abs(pred_space_far))
+    #space_sdf_loss = torch.exp(-1e1 * torch.abs(pred_space_far))
+    space_sdf_loss = F.mse_loss(udf_pred_far, udf_gt_far)
     space_grad_loss_far = torch.abs(gradient_space_far.norm(dim=-1) - 1)
     space_grad_loss_near = torch.abs(gradient_space_near.norm(dim=-1) - 1)
     grad_loss = torch.cat([surf_grad_loss, space_grad_loss_far, space_grad_loss_near], dim=-1)
