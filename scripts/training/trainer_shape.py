@@ -138,7 +138,7 @@ class ShapeTrainer(object):
             #     param_group["lr"] = lr
         
     def save_checkpoint(self, epoch):
-        path = self.checkpoint_path + '/2d_wo_udf_epoch_{}.tar'.format(epoch)
+        path = self.checkpoint_path + '/2d_udf_epoch_{}.tar'.format(epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
@@ -204,7 +204,7 @@ class ShapeTrainer(object):
                 mesh, img = latent_to_mesh(self.decoder,lat, self.device)
                 if img is not None:
                     wandb.log({'shape': wandb.Image(img)})
-                    mesh.export('sample_result/2dshape_map_{:04d}.ply'.format(epoch))
+                    mesh.export('sample_result/2dshape_udf_{:04d}.ply'.format(epoch))
 
               
             n_train = len(self.trainloader)

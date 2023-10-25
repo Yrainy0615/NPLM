@@ -16,6 +16,7 @@ class DeepSDF(nn.Module):
             out_dim=1,
             num_freq_bands=None,
             input_dim=3,
+            map=False
     ):
         super().__init__()
         if num_freq_bands is None:
@@ -29,11 +30,12 @@ class DeepSDF(nn.Module):
         print(hidden_dim)
         dims = [hidden_dim] * nlayers
         dims = [d_in] + dims + [out_dim]
-
+        self.map = map
         self.num_layers = len(dims)
         self.skip_in = [nlayers//2]
         self.num_freq_bands = num_freq_bands
-        self.mapping = MappingNet(lat_dim, lat_dim)
+        if self.map:
+            self.mapping = MappingNet(lat_dim, lat_dim)
         if num_freq_bands is not None:
             fun = lambda x: 2 ** x
             self.freq_bands = fun(torch.arange(num_freq_bands))
@@ -64,7 +66,8 @@ class DeepSDF(nn.Module):
             self.activation = nn.ReLU()
 
     def forward(self, xyz, lat_rep, anchors=None):
-        lat_rep = self.mapping(lat_rep)
+        if self.map:
+            lat_rep = self.mapping(lat_rep)
 
         if self.num_freq_bands is not None:
             pos_embeds = [xyz]

@@ -33,7 +33,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
     parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm_def.yaml', help='config file')
     parser.add_argument('--mode', type=str, default='deformation', choices=['shape', 'deformation','viz_shape'], help='training mode')
-    parser.add_argument('--gpu', type=int, default=7, help='gpu index')
+    parser.add_argument('--gpu', type=int, default=6, help='gpu index')
     parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
     parser.add_argument('--output', type=str, default='shape', help='output directory')
     
@@ -45,18 +45,21 @@ if __name__ == "__main__":
                     hidden_dim=1024,
                     geometric_init=False,
                     out_dim=3,
-                    input_dim=3)
+                    input_dim=3,
+                    map=False)
     decoder.lat_dim_expr = 200
     decoder_shape = DeepSDF(
             lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
             hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
             geometric_init=True,
             out_dim=1,
+            map=True
         )
 
     
-    checkpoint_shape = torch.load('checkpoints/shape_epoch_5000.tar')
+    checkpoint_shape = torch.load('checkpoints/cg_bs8/cgshape_bs8_udf_epoch__11000.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
+    lat_spc_all = checkpoint_shape['latent_spc_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape.eval()
     decoder_shape.to(device)
@@ -66,7 +69,7 @@ if __name__ == "__main__":
     decoder.eval()
     decoder = decoder.to(device)
     
-    out_dir = 'sample_result/shape_cg_1019'
+    out_dir = 'sample_result/cg_bs8_11000'
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
     mini = [-.95, -.95, -.95]
@@ -111,9 +114,11 @@ if __name__ == "__main__":
 
     if viz == 'generation':
         images = []
-        for i in range(7):
+        for i in range(lat_idx_all.shape[0]):
             lat_idx = lat_idx_all[i]
-            logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=8000)
+            lat_spc = lat_spc_all[i]
+            lat = torch.cat([lat_idx.unsqueeze(0), lat_spc.unsqueeze(0)], dim=-1)
+            logits = get_logits(decoder_shape, lat, grid_points=grid_points,nbatch_points=2000)
             mesh = mesh_from_logits(logits, mini, maxi,256)
             basename = out_dir + '/shape_{:04d}.ply'.format(i)
             mesh.export(basename)

@@ -27,7 +27,7 @@ def mesh_from_logits(logits, mini, maxi, resolution):
 
     # padding to ba able to retrieve object close to bounding box bondary
     # logits = np.pad(logits, ((1, 1), (1, 1), (1, 1)), 'constant', constant_values=1000)
-    threshold = 0.0
+    threshold = 0.1
     vertices, triangles = mcubes.marching_cubes(logits, threshold)
 
     # rescale to original scale
