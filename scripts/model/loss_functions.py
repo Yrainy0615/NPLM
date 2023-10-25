@@ -93,7 +93,7 @@ def actual_compute_loss(batch_cuda, decoder, glob_cond, glob_cond2):
                     'normals': torch.mean(surf_normal_loss),
                     'space_sdf': torch.mean(space_sdf_loss),
                     'grad': torch.mean(grad_loss),
-                  #  'near_udf': torch.mean(udf_near_loss),
+                    'near_udf': torch.mean(udf_near_loss),
                     'lat_idx':lat_idx.mean(),
                     'lat_spc':lat_spc.mean(),}
         return ret_dict

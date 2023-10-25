@@ -155,7 +155,7 @@ if __name__ == "__main__":
 
     mask = renderer.get_mask(mesh)
     depth = renderer.get_depth(mesh)
-    # renderer.viz_depth(depth)
+    renderer.viz_depth(depth)
     #sdf_grid = renderer.depth_sdf(depth)
    # K = renderer.get_intrinsic()
     point_cloud = renderer.depth_pointcloud(depth)

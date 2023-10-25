@@ -138,7 +138,7 @@ class ShapeTrainer(object):
             #     param_group["lr"] = lr
         
     def save_checkpoint(self, epoch):
-        path = self.checkpoint_path + '/cgshape_1023wo_epoch__{}.tar'.format(epoch)
+        path = self.checkpoint_path + '/cgshape_bs8_udf_epoch__{}.tar'.format(epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),

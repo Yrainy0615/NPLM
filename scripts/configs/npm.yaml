@@ -7,20 +7,20 @@ decoder:
 training:
   root_dir: dataset/ScanData
   root_dir_color: dataset/LeafData
-  save_path: checkpoints/cg_bs1
-  batch_size: 1
-  ckpt_interval: 5000
+  save_path: checkpoints/cg_bs8
+  batch_size: 8
+  ckpt_interval: 1000
   grad_clip: 0.1
   grad_clip_lat: 0.1
   lr: 0.0005
   lr_lat: 0.001
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.5
-  lr_decay_interval: 5000
-  lr_decay_interval_lat: 5000
+  lr_decay_interval: 500
+  lr_decay_interval_lat: 500
 
-  npoints_decoder: 1500
-  npoints_decoder_non: 750
+  npoints_decoder: 2000
+  npoints_decoder_non: 1000
 
   sigma_near: 0.001
   weight_decay: 0.02

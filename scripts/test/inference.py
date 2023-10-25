@@ -9,7 +9,9 @@ from scripts.dataset.sample_surface import sample_surface
 import point_cloud_utils as pcu
 import numpy as np
 from scripts.model.reconstruction import mesh_from_logits, get_logits, create_grid_points_from_bounds, deform_mesh
-
+from scripts.model.renderer import MeshRender
+from pytorch3d.io import load_ply, load_obj
+from pytorch3d.structures import Meshes,  Pointclouds, Volumes
 
 def load_mesh(path):
         mesh = pcu.TriangleMesh()
@@ -30,13 +32,14 @@ def get_grid_points():
 def inference(input,encoder, decoder_shape, decoder_deform,grid_points,device):
     mini = [-1.0, -1.0, -1.0]
     maxi = [1.0, 1.0, 1.0]
-    input_tensor = torch.from_numpy(input).float().to(device).permute(1,0)
-    latent_shape, latent_deform = encoder(input_tensor.unsqueeze(0))
+    #input_tensor = torch.from_numpy(input).float().to(device).permute(1,0)
+    latent_shape, latent_deform = encoder(input.unsqueeze(0).permute(0,2,1))
     logits_shape = get_logits(decoder_shape, latent_shape, grid_points, nbatch_points=6000)
     mesh_base = mesh_from_logits(logits_shape, mini, maxi, 256)
     mesh_base.export('inference_base.ply')
     deform = deform_mesh(mesh=mesh_base, deformer=decoder_deform, lat_rep=latent_deform, anchors=None, lat_rep_shape=latent_shape)
-    #deform.export('inference.ply')
+    deform.export('inference.ply')
+    mesh_base.export('inference_base.ply')
     return deform
     
     
@@ -55,7 +58,7 @@ if __name__ == "__main__":
     CFG = yaml.safe_load(open(cfgpath, 'r'))
     
     # initialize dataset
-  
+    render = MeshRender(device=device)
     
     # initialize for shape decoder
     decoder_shape = DeepSDF(
@@ -63,6 +66,7 @@ if __name__ == "__main__":
             hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
             geometric_init=True,
             out_dim=1,
+            map =True
         ) 
     checkpoint_shape = torch.load(CFG['training']['checkpoint_shape'])
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
@@ -90,12 +94,14 @@ if __name__ == "__main__":
     
     
     # input
-    mesh = load_mesh('dataset/ScanData/Autumn_maple_leaf.001.obj')
-    sample = sample_surface(mesh, n_samps=CFG['training']['n_samples'])
-    points = sample['points']
-    noise_index = np.random.choice(points.shape[0], CFG['training']['n_sample_noise'], replace=False)
-    noise = points[noise_index] + np.random.randn(points[noise_index].shape[0], 3) * CFG['training']['sigma_near']
-    input = np.concatenate([points, noise], axis=0)
+    meshfile = 'sample_result/deform_interpolation/deform_0001.ply'
+    #sample = sample_surface(mesh, n_samps=CFG['training']['n_samples'])
+    verts, face= load_ply(meshfile)
+    
+    mesh = Meshes(verts=verts.unsqueeze(0), faces=face.unsqueeze(0)).to(device)
+    depth = render.get_depth(mesh)
+    point_cloud = render.depth_pointcloud(depth)
+    pts = point_cloud._points_padded.squeeze(0) 
     grid_points = get_grid_points()
-    output = inference(input, encoder, decoder_shape, decoder_deform, grid_points,device)
+    output = inference(pts, encoder, decoder_shape, decoder_deform, grid_points,device)
     output.export('inference.ply')

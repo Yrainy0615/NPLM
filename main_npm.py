@@ -16,8 +16,8 @@ import numpy as np
 import pyvista as pv
 import os
 import wandb
-
-
+import warnings
+warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
 parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape', 'color'], help='training mode')
@@ -40,7 +40,7 @@ if args.mode == "shape":
                             batch_size=CFG['training']['batch_size'],
                             sigma_near=CFG['training']['sigma_near'],
                             root_dir=CFG['training']['root_dir'])
-        trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=False, num_workers=2)
+        trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
         decoder = DeepSDF(
             lat_dim=CFG['decoder']['decoder_lat_dim'],
             hidden_dim=CFG['decoder']['decoder_hidden_dim'],
