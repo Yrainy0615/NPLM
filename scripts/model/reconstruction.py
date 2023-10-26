@@ -2,6 +2,44 @@ import numpy as np
 import trimesh
 import mcubes
 import torch
+from matplotlib import pyplot as plt
+import skimage.measure
+
+def save_mesh_image_with_camera(vertices, faces):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_facecolor((1, 1, 1))
+    fig.set_facecolor((1, 1, 1))
+    ax.plot_trisurf(vertices[:, 0], vertices[:, 1], faces, vertices[:, 2], shade=True, color='blue')
+
+    ax.view_init(elev=90, azim=180)  
+    ax.dist = 8  
+    ax.set_box_aspect([1,1,1.4]) 
+    ax.set_xlim(-1,1)
+    ax.set_ylim(-1,1)
+    ax.set_zlim(-1,1)
+    plt.axis('off')  
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=300)
+    buf.seek(0)
+    img = Image.open(buf)
+    
+    plt.close()
+    return img
+def latent_to_mesh(decoder, latent_idx,device):
+    mini = [-.95, -.95, -.95]
+    maxi = [0.95, 0.95, 0.95]
+    grid_points = create_grid_points_from_bounds(mini, maxi, 256)
+    grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
+    grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
+    logits = get_logits(decoder, latent_idx, grid_points=grid_points,nbatch_points=2000)
+    mesh = mesh_from_logits(logits, mini, maxi,256)
+    # if len(mesh.vertices)==0:
+    #     return None, None
+    # else:
+    #     img = save_mesh_image_with_camera(mesh.vertices, mesh.faces)
+    return mesh 
 
 def create_grid_points_from_bounds(minimun, maximum, res, scale=None):
     if scale is not None:
@@ -23,13 +61,17 @@ def create_grid_points_from_bounds(minimun, maximum, res, scale=None):
 def mesh_from_logits(logits, mini, maxi, resolution):
     logits = np.reshape(logits, (resolution,) * 3)
 
-    logits *= -1
+    #logits *= -1
 
     # padding to ba able to retrieve object close to bounding box bondary
     # logits = np.pad(logits, ((1, 1), (1, 1), (1, 1)), 'constant', constant_values=1000)
-    threshold = 0.0
-    vertices, triangles = mcubes.marching_cubes(logits, threshold)
-
+    threshold = 0.015
+    # vertices, triangles = mcubes.marching_cubes(logits, threshold
+    try:
+        vertices, triangles,_,_ = skimage.measure.marching_cubes(logits, threshold)
+    except:
+        return None
+        
     # rescale to original scale
     step = (np.array(maxi) - np.array(mini)) / (resolution - 1)
     vertices = vertices * np.expand_dims(step, axis=0)
@@ -48,13 +90,13 @@ def get_logits(decoder,
     logits_list = []
     for points in grid_points_split:
         with torch.no_grad():
-            logits, anchors = decoder(points, encoding.repeat(1, points.shape[1], 1), None)
+            logits = decoder(points, encoding.repeat(1, points.shape[1], 1))
             logits = logits.squeeze()
             logits_list.append(logits.squeeze(0).detach().cpu())
 
     logits = torch.cat(logits_list, dim=0).numpy()
     if return_anchors:
-        return logits, anchors
+        return logits
     else:
         return logits
 

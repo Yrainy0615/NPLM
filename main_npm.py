@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape', 'color'], help='training mode')
+parser.add_argument('--mode', type=str, default='shape', choices=['shape', 'deformation','viz_shape', '2d'], help='training mode')
 parser.add_argument('--gpu', type=int, default=3, help='gpu index')
 parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
 parser.add_argument('--output', type=str, default='shape', help='output directory')
@@ -34,6 +34,7 @@ if args.mode == "shape":
         config = 'NPLM/scripts/configs/npm.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
         wandb.init(project='NPLM', name =args.wandb)
+        wandb.config.update(CFG)
         trainset = LeafShapeDataset(mode='train',
                             n_supervision_points_face=CFG['training']['npoints_decoder'],
                             n_supervision_points_non_face=CFG['training']['npoints_decoder_non'],
@@ -88,8 +89,8 @@ if args.mode == "deformation":
                                 device=device)
         trainer.train(30001)
 
-if args.mode == "color":
-        config = 'NPLM/scripts/configs/npm_color.yaml'
+if args.mode == "2d":
+        config = 'NPLM/scripts/configs/npm.yaml'
         CFG = yaml.safe_load(open(config, 'r'))
 
         wandb.init(project='NPLM', name =args.wandb)

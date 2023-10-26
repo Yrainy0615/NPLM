@@ -157,7 +157,7 @@ class LeafColorDataset(Dataset):
     
     def __getitem__(self, index):
         mesh_file = self.all_mesh[index]
-        rgb_file = mesh_file.replace('.obj', '_aligned.JPG')
+        rgb_file = mesh_file.replace('.obj', '_mask_aligned.JPG')
         rgb = cv2.imread(rgb_file, cv2.IMREAD_COLOR)
         rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
         rgb = cv2.resize(rgb, (64,64))
@@ -197,6 +197,9 @@ class Leaf2DShapeDataset(Dataset):
     
     def __getitem__(self, index):
         mesh_file = self.all_mesh[index]
+        mask_file = mesh_file.replace('.obj', '_mask_aligned.JPG') 
+        mask = cv2.imread(mask_file)
+        mask = cv2.resize(mask, (64,64))
         dict = self.manager.extract_info_from_meshfile(mesh_file)
         mesh = dict['mesh']
         sample = sample_surface(mesh,n_samps=3000)
@@ -211,7 +214,8 @@ class Leaf2DShapeDataset(Dataset):
                     'sup_grad_near_udf': sup_grad_near_udf,
                     'spc': self.species_to_idx[dict['species']],
                     'normals': sample['normals'],
-                    'idx': np.array([index]),}
+                    'idx': np.array([index]),
+                    'mask':mask}
         return ret_dict
 
 

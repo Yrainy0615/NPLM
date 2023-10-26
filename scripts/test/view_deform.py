@@ -10,6 +10,9 @@ import random
 import numpy as np
 import io
 from PIL import Image
+from scripts.model.fields import UDFNetwork
+os.environ['CUDA_LAUNCH_BLOCKING']= '1'
+
 def save_mesh_image_with_camera(vertices, faces, filename="mesh.png"):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -31,7 +34,7 @@ def save_mesh_image_with_camera(vertices, faces, filename="mesh.png"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
-    parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm_def.yaml', help='config file')
+    parser.add_argument('--config',type=str, default='NPLM/scripts/configs/npm.yaml', help='config file')
     parser.add_argument('--mode', type=str, default='deformation', choices=['shape', 'deformation','viz_shape'], help='training mode')
     parser.add_argument('--gpu', type=int, default=7, help='gpu index')
     parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
@@ -47,15 +50,18 @@ if __name__ == "__main__":
                     out_dim=3,
                     input_dim=3)
     decoder.lat_dim_expr = 200
-    decoder_shape = DeepSDF(
-            lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
-            hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
-            geometric_init=True,
-            out_dim=1,
-        )
-
+    # decoder_shape = DeepSDF(
+    #         lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
+    #         hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
+    #         geometric_init=True,
+    #         out_dim=1,
+    #     )
+    decoder_shape = UDFNetwork(d_in=CFG['decoder']['decoder_lat_dim'],
+                         d_hidden=CFG['decoder']['decoder_hidden_dim'],
+                         d_out=CFG['decoder']['decoder_out_dim'],
+                         n_layers=CFG['decoder']['decoder_nlayers'],)
     
-    checkpoint_shape = torch.load('checkpoints/cg_bs1/cgshape_epoch_30000.tar')
+    checkpoint_shape = torch.load('checkpoints/cg_bs8/cgshape_bs8_udf_epoch__20000.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
     lat_spc_all = checkpoint_shape['latent_spc_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
@@ -72,7 +78,7 @@ if __name__ == "__main__":
         os.makedirs(out_dir)    
     mini = [-.95, -.95, -.95]
     maxi = [0.95, 0.95, 0.95]
-    grid_points = create_grid_points_from_bounds(mini, maxi, 256)
+    grid_points = create_grid_points_from_bounds(mini, maxi, 64)
     grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
     grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
     decoder = decoder.to(device)
