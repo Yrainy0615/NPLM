@@ -1,9 +1,8 @@
 import trimesh
 import numpy as np
 import os
-from .DataManager import LeafScanManager
+# from scripts.dataset.DataManager import LeafScanManager
 from multiprocessing import Pool
-import pyvista as pv
 from matplotlib import pyplot as plt
 
 def sample(m_neutral, m_deformed, std, n_samps):
@@ -27,95 +26,51 @@ def sample(m_neutral, m_deformed, std, n_samps):
     p += offsets * normals
     return p_neutral, p, normals_neutral, normals
 
-def main(n_samples):
-    manager = LeafScanManager('dataset/ScanData')
-    all_species = manager.get_all_species()
-    for species in all_species:
-        neutral_pose = manager.get_neutral_pose(species)
-        neutral_pose = os.path.join(manager.neutral_path, neutral_pose)
-        m_neutral = trimesh.load(neutral_pose)
-        all_deformed = manager.get_poses(species)
-        for deform in all_deformed:
-            deform = os.path.join(manager.get_species_path(species), deform)
-            if not '.npy' in deform:
-                print(deform)
-                m_deformed = trimesh.load(deform)
-                p_neutral, p, normals_neutral, normals = sample(m_neutral, m_deformed, 0.01, n_samples)
-                p_neutral2, p2, normals_neutral2, normals2 = sample(m_deformed, m_neutral, 0.01, n_samples)#0.01)
-                p_neutral = np.concatenate([p_neutral, p2], axis=0)
-                p = np.concatenate([p, p_neutral2], axis=0)
-                normals_neutral = np.concatenate([normals_neutral, normals2], axis=0)
-                normals = np.concatenate([normals, normals_neutral2], axis=0)
-
-                p_neutral_tight, p_tight, normals_neutral_tight, normals_tight = sample(m_neutral, m_deformed, 0.002, n_samples)#0.002)
-                p_neutral_tight2, p_tight2, normals_neutral_tight2, normals_tight2 = sample(m_deformed, m_neutral, 0.002, n_samples)#0.002)
-                p_neutral_tight = np.concatenate([p_neutral_tight, p_tight2], axis=0)
-                p_tight = np.concatenate([p_tight, p_neutral_tight2], axis=0)
-                normals_neutral_tight = np.concatenate([normals_neutral_tight, normals_tight2], axis=0)
-                normals_tight = np.concatenate([normals_tight, normals_neutral_tight2], axis=0)          
-                                            
-                all_p_neutral = np.concatenate([p_neutral, p_neutral_tight], axis=0)
-                all_normals_neutral = np.concatenate([normals_neutral, normals_neutral_tight], axis=0)
-                all_p = np.concatenate([p, p_tight], axis=0)
-                all_normals = np.concatenate([normals, normals_tight], axis=0)
-                perm = np.random.permutation(all_p.shape[0])
-                all_p_neutral = all_p_neutral[perm, :]
-                all_normals_neutral = all_normals_neutral[perm, :]
-                all_p = all_p[perm, :]
-                all_normals = all_normals[perm, :]
-                if np.any(np.isnan(all_p)) or np.any(np.isnan(all_normals)):
-                    print('DONE')
-                    break    
-                    
-                    
-                # if VIZ:
-                #     pv.start_xvfb()
-                #     pl = pv.Plotter(shape=(1, 2))
-                #     pl.subplot(0, 0)
-                #     pl.add_points(all_p_neutral, scalars=all_normals_neutral[:, 0])
-                #     pl.subplot(0, 1)
-                #     pl.add_points(all_p, scalars=all_normals_neutral[:, 0])
-                #     pl.link_views()
-                #     pl.show()
-                
-                if VIZ:
-                    fig = plt.figure(figsize=(12, 6))
-
-                    # Subplot for neutral points
-                    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
-                    ax1.scatter(all_p_neutral[:, 0], all_p_neutral[:, 1], all_p_neutral[:, 2], c=all_normals_neutral[:, 0])
-                    ax1.set_title('Neutral Points')
-                    
-                    # Subplot for other points
-                    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
-                    ax2.scatter(all_p[:, 0], all_p[:, 1], all_p[:, 2], c=all_normals_neutral[:, 0])
-                    ax2.set_title('Other Points')
-
-                    plt.show()
-                
-                data = np.concatenate([all_p_neutral, all_p], axis=-1)
-                data_normals = np.concatenate([all_normals_neutral, all_normals], axis=-1)
-                # split_files = np.array_split(data, 10 ,axis=0)
-                
-                if not VIZ:
-                    # for i in range(len(split_files)):
-                    split_files_path = manager.get_species_path(species)
-                    if not os.path.exists(split_files_path):
-                        os.makedirs(split_files_path)
-                    filename = deform.split('/')[-1]
-                    filename = os.path.splitext(filename)[0] + '_deform.npy'
-                    np.save(os.path.join(split_files_path, filename), data)
-                    print(f'{filename} is saved.' )
-                        
-                
-                
-            
-
-    
-
-        
 
 if __name__ == "__main__":
     VIZ=False
     n_samples = 25000
-    main(n_samples)
+    #main(n_samples)
+    deformation_dir  = 'dataset/ScanData/deformation'
+    m_neutral = trimesh.load(os.path.join(deformation_dir, 'maple_template.obj'))
+    for deform in os.listdir(deformation_dir) :
+        if not 'template' in deform and deform.endswith('.obj'):
+            m_deformed = trimesh.load(os.path.join(deformation_dir, deform))
+            p_neutral, p, normals_neutral, normals = sample(m_neutral, m_deformed, 0.01, n_samples)
+            p_neutral2, p2, normals_neutral2, normals2 = sample(m_deformed, m_neutral, 0.01, n_samples)
+            p_neutral, p, normals_neutral, normals = sample(m_neutral, m_deformed, 0.01, n_samples)
+            p_neutral2, p2, normals_neutral2, normals2 = sample(m_deformed, m_neutral, 0.01, n_samples)#0.01)
+            p_neutral = np.concatenate([p_neutral, p2], axis=0)
+            p = np.concatenate([p, p_neutral2], axis=0)
+            normals_neutral = np.concatenate([normals_neutral, normals2], axis=0)
+            normals = np.concatenate([normals, normals_neutral2], axis=0)
+
+            p_neutral_tight, p_tight, normals_neutral_tight, normals_tight = sample(m_neutral, m_deformed, 0.002, n_samples)#0.002)
+            p_neutral_tight2, p_tight2, normals_neutral_tight2, normals_tight2 = sample(m_deformed, m_neutral, 0.002, n_samples)#0.002)
+            p_neutral_tight = np.concatenate([p_neutral_tight, p_tight2], axis=0)
+            p_tight = np.concatenate([p_tight, p_neutral_tight2], axis=0)
+            normals_neutral_tight = np.concatenate([normals_neutral_tight, normals_tight2], axis=0)
+            normals_tight = np.concatenate([normals_tight, normals_neutral_tight2], axis=0)          
+                                        
+            all_p_neutral = np.concatenate([p_neutral, p_neutral_tight], axis=0)
+            all_normals_neutral = np.concatenate([normals_neutral, normals_neutral_tight], axis=0)
+            all_p = np.concatenate([p, p_tight], axis=0)
+            all_normals = np.concatenate([normals, normals_tight], axis=0)
+            perm = np.random.permutation(all_p.shape[0])
+            all_p_neutral = all_p_neutral[perm, :]
+            all_normals_neutral = all_normals_neutral[perm, :]
+            all_p = all_p[perm, :]
+            all_normals = all_normals[perm, :]
+            if np.any(np.isnan(all_p)) or np.any(np.isnan(all_normals)):
+                print('DONE')
+                break    
+            data = np.concatenate([all_p_neutral, all_p], axis=-1)
+            data_normals = np.concatenate([all_normals_neutral, all_normals], axis=-1)
+            filename = deform.split('/')[-1]
+            filename = os.path.splitext(filename)[0] + '_deform.npy'
+            np.save(os.path.join(deformation_dir, filename), data)
+            print(f'{filename} is saved.' )
+                        
+
+    
+        

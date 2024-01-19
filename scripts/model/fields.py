@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from scripts.model.embedder import get_embedder
-from scripts.model.deepSDF import MappingNet
+
 from termcolor import colored
 
 
@@ -127,6 +127,7 @@ class UDFNetwork(nn.Module):
                  geometric_init=True,
                  weight_norm=True,
                  udf_type='abs',
+                 use_mapping= False
                  ):
         super(UDFNetwork, self).__init__()
         self.lat_dim = d_in
@@ -703,3 +704,17 @@ class BetaNetwork(nn.Module):
         gamma = self.get_gamma()
         zeta = self.get_zeta()
         return beta, gamma, zeta
+
+
+class MappingNet(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dim=1024,nlayers=8):
+        super(MappingNet, self).__init__()
+        layers = [nn.Linear(input_dim, hidden_dim), nn.LeakyReLU(0.2, inplace=True)]
+        for _ in range(nlayers - 2):
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+        layers.append(nn.Linear(hidden_dim, output_dim))
+        self.mapping = nn.Sequential(*layers)
+        
+    def forward(self,x):
+        return self.mapping(x)

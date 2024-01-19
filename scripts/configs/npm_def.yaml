@@ -1,29 +1,34 @@
 shape_decoder:
   decoder_lat_dim: 512
   decoder_hidden_dim: 1024
+  decoder_out_dim: 1
+  decoder_nlayers: 8
+
 deform_decoder:
-  decoder_hidden_dim: 512
+  decoder_hidden_dim: 1024
   decoder_lat_dim: 200
-  decoder_nblocks: -1
-encoder: null
-has_forward: true
+  decoder_nlayers: 8
+  decoder_out_dim: 3
+  use_mapping: False
+
 training:
-  save_path: checkpoints/
-  root_dir: dataset/ScanData
-  root_dir_color: dataset/LeafData
-  batch_size: 1
+  shape_checkpoints: checkpoints/2dShape/exp-sdf2d__5000.tar
+  root_dir: dataset/ScanData/deformation
+  save_name: exp-deform
+  use_nce: False
+  use_distance: True
+  batch_size: 16
   ckpt_interval: 5000
   grad_clip: 0.025
   grad_clip_lat: 0.025
   npoints_decoder: 2000
-  npoints_decoder_non: 250
-  sigma_near: 0.001
   weight_decay: 0.02
   lambdas:
     corresp: 500.0
     lat_reg: 5.0e-05
     loss_reg_zero: 0.0
-    loss_rgb: 0.01
+    loss_nce: 1
+    loss_distance: 5
   lr: 0.01
   lr_decay_factor: 0.2
   lr_decay_factor_lat: 0.2
@@ -32,6 +37,5 @@ training:
   lr_lat: 0.005
   npoints_decoder: 1000
   shape_ckpt: 30000
-  shape_exp_name: SHAPE_EXP_NAME
   sigma_near: 0.01
   weight_decay: 1.0e-05
