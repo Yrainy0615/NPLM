@@ -1,5 +1,5 @@
 import os
-import point_cloud_utils as pcu
+# import point_cloud_utils as pcu
 import json
 import trimesh
 

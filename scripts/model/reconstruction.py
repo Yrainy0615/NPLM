@@ -4,6 +4,8 @@ import mcubes
 import torch
 from matplotlib import pyplot as plt
 import skimage.measure
+from scripts.dataset.img_to_3dsdf import sdf2d_3d
+
 
 def save_mesh_image_with_camera(vertices, faces):
     fig = plt.figure()
@@ -163,3 +165,12 @@ def deform_mesh(mesh,
 
     return mesh_deformed
 
+def sdf_from_latent(decoder, latent, grid_size):
+    x = np.linspace(0, grid_size, grid_size)
+    y = np.linspace(0, grid_size, grid_size)
+    grid_points = np.array(np.meshgrid(x, y)).T.reshape(-1, 2)
+    grid_points = torch.from_numpy(grid_points).float().to(latent.device)
+    sdf_2d = decoder(grid_points, latent.unsqueeze(0).repeat(grid_points.shape[0], 1))
+    sdf_2d = sdf_2d.reshape(grid_size, grid_size).cpu().detach().numpy()
+    sdf_3d  = sdf2d_3d(sdf_2d, viz_3d=False)
+    return sdf_3d   

@@ -1,6 +1,5 @@
 from .DataManager import LeafScanManager
 import point_cloud_utils as pcu
-import pyvista as pv
 import trimesh
 import PIL
 import os

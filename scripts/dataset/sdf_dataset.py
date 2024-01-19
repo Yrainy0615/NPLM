@@ -9,7 +9,6 @@ import yaml
 import igl
 from .sample_surface import sample_surface
 import trimesh
-import point_cloud_utils as pcu
 import cv2
 
 def uniform_ball(n_points, rad=1.0):
@@ -218,6 +217,39 @@ class Leaf2DShapeDataset(Dataset):
                     'mask':mask}
         return ret_dict
 
+class LeafSDF2dFDataset(Dataset):
+    def __init__(self, root_dir, num_samples) -> None:
+        super().__init__()
+        self.all_file = []
+        self.root_dir = root_dir
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            for filename in filenames:
+                if filename.endswith('.npy') and not 'sdf' in filename:
+                    self.all_file.append(os.path.join(dirpath, filename))
+        self.all_file.sort()
+        self.num_samples = num_samples
+        
+    def __len__(self):
+        return len(self.all_file)
+    
+    def __getitem__(self, index):
+        trainfile = self.all_file[index]
+        sdf_2d = np.load(trainfile, allow_pickle=True)
+        # random sampling from sdf_grid
+        points = self.sample_points_from_grid(sdf_2d.shape[0], self.num_samples)
+        sdf_gt = sdf_2d[points[:,0], points[:,1]]
+        return {'points': points,
+                'sdf_gt': sdf_gt,
+                'index': index,}
+        
+    def sample_points_from_grid(self, n, x):
+        if x > n * n:
+            raise ValueError("over sampling")
+        points = [(i, j) for i in range(n) for j in range(n)]
+        sampled_points = np.random.choice(len(points), size=x, replace=False)
+        
+        return np.array(points)[sampled_points]
+    
 
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'

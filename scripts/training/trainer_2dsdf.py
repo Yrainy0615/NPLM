@@ -117,6 +117,8 @@ class ShapeTrainer(object):
             #     param_group["lr"] = lr
         
     def save_checkpoint(self, epoch,save_name):
+        if not os.path.exists(self.checkpoint_path):
+            os.makedirs(self.checkpoint_path)
         path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
