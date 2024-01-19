@@ -14,22 +14,25 @@ from pytorch3d.renderer import (
     blending,
     Textures,
     PointsRenderer,
-    AlphaCompositor
+    AlphaCompositor,
+    SoftSilhouetteShader,
+    softmax_rgb_blend
 )
-from pytorch3d.io import load_objs_as_meshes, load_obj
+import torch.nn.functional as F
+from pytorch3d.ops.interp_face_attrs import interpolate_face_attributes
+import os
+from pytorch3d.io import load_objs_as_meshes, load_obj, load_ply
 import torch
 from pytorch3d.structures import Meshes,  Pointclouds, Volumes
 from pytorch3d.loss import mesh_laplacian_smoothing
 from matplotlib import pyplot as plt
 import numpy as np
-from pytorch3d.vis.plotly_vis import AxisArgs, plot_batch_individually, plot_scene
 from pytorch3d.ops import add_pointclouds_to_volumes
-import mcubes
 from pytorch3d.ops.marching_cubes import marching_cubes_naive
 
 class MeshRender():
     def __init__(self,device):
-        R, t = look_at_view_transform(1, 0, 0)
+        R, t = look_at_view_transform(2,0, 0)
         self.R = torch.nn.Parameter(R)
         self.t = torch.nn.Parameter(t)
         self.device = device
@@ -37,11 +40,11 @@ class MeshRender():
                             ambient_color=[[1, 1, 1]],
                             specular_color=[[0., 0., 0.]], diffuse_color=[[0., 0., 0.]])
         raster_settings = RasterizationSettings(
-            image_size=256,
+            image_size=1024,
             blur_radius=0.0,
             faces_per_pixel=1,)
         self.cameras = FoVPerspectiveCameras(device=self.device, R=R, T=t)
-        blend_params = blending.BlendParams(background_color=[255, 255, 255])
+        blend_params = blending.BlendParams(background_color=[0, 0, 0])
         self.renderer = MeshRenderer(
         rasterizer=MeshRasterizer(
             cameras=self.cameras,
@@ -54,21 +57,22 @@ class MeshRender():
             blend_params=blend_params
         )
     )
-        
-        raster_settings = PointsRasterizationSettings(
-        image_size=256, 
-        radius = 0.01,
-        points_per_pixel = 5
-    )
-        # PointsRasterizer
-        rasterizer_point = PointsRasterizer(cameras=self.cameras, raster_settings=raster_settings)
-        self.point_renderer = PointsRenderer(
-            rasterizer=rasterizer_point,
-            compositor=AlphaCompositor(background_color=(0,0,0))
-        ).cuda()
-        
+        raster_settings_silhouette = RasterizationSettings(
+        image_size=64, 
+        blur_radius=0, 
+        faces_per_pixel=1, )
+        self.renderer_silhouette = MeshRenderer( 
+            rasterizer=MeshRasterizer(
+                cameras=self.cameras,
+                raster_settings=raster_settings_silhouette
+            ),
+            shader=SoftSilhouetteShader()        )
+        #self.render = MeshRenderer(rasterizer=raster_settings, shader=self.shader)
         
     def render_rgb(self, mesh):
+        # if mesh.textures is None, generates a texture for each face
+        if mesh.textures is None:
+            mesh.textures = Textures(verts_rgb=torch.ones_like(mesh.verts_padded()))
         return self.renderer(mesh)
     
     def rasterize(self, mesh):
@@ -78,7 +82,7 @@ class MeshRender():
     def get_mask(self, mesh):
         fragments = self.renderer.rasterizer(mesh)
         mask = fragments.zbuf > 0
-        mask = mask.detach().cpu().squeeze(0).numpy()
+        #mask = mask.detach().cpu().squeeze(0).numpy()
         return mask
     
     def get_depth(self, mesh):
@@ -144,42 +148,67 @@ class MeshRender():
                         initial_volumes=initial_volumes.to(self.device),
                         mode='trilinear',)
         return updated_volumes
+    
+    def phong_normal_shading(self, meshes, fragments) -> torch.Tensor:
+        faces = meshes.faces_packed()  # (F, 3)
+        vertex_normals = meshes.verts_normals_packed()  # (V, 3)
+        faces_normals = vertex_normals[faces]
+        ones = torch.ones_like(fragments.bary_coords)
+        pixel_normals = interpolate_face_attributes(
+            fragments.pix_to_face, ones, faces_normals
+        )
+        return pixel_normals
+    
+    def render_normal(self, mesh):
+        # if mesh.textures is None, generates a texture for each face
+        if mesh.textures is None:
+            mesh.textures = Textures(verts_rgb=torch.ones_like(mesh.verts_padded()))
+        fragments = self.renderer.rasterizer(mesh)
+        normal = self.phong_normal_shading(mesh, fragments)
+        images = softmax_rgb_blend(normal, fragments, blend_params=blending.BlendParams(background_color=[128, 128, 255]))
+        normals = F.normalize(images, dim=3)
+        img = normals.detach().cpu().squeeze().numpy()
+        img = (img + 1) / 2.0
+        return img
+        
 
 
-if __name__ == "__main__":
+if  __name__ == "__main__":
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-    meshfile = 'dataset/ScanData/Autumn_maple_leaf.001.obj'
-    mesh = load_objs_as_meshes([meshfile],device=device)
+
+    mesh_path = 'dataset/ScanData/canonical'
+    meshlist = os.listdir(mesh_path)
+    #meshfile = [os.path.join(mesh_path, file) for file in meshlist if file.endswith('.obj')]
+    #meshfile = 'dataset/leaf_uv_5sp.ply'
+    meshfile = 'test.ply'
+    verts, faces = load_ply(meshfile)
+    verts = verts - verts.mean(0)
+    verts = verts/verts.abs().max()
+    mesh = Meshes(verts=[verts], faces=[faces], textures=None)
+    mesh = mesh.to(device)
+    if mesh.textures is None:
+        mesh.textures = Textures(verts_rgb=torch.ones_like(mesh.verts_padded()))
     renderer  = MeshRender(device=device)
-    #fragments = renderer.rasterize(mesh)
-
-    mask = renderer.get_mask(mesh)
-    depth = renderer.get_depth(mesh)
-    renderer.viz_depth(depth)
-    #sdf_grid = renderer.depth_sdf(depth)
-   # K = renderer.get_intrinsic()
-    point_cloud = renderer.depth_pointcloud(depth)
-   # images_PC = renderer.point_renderer(point_cloud)
-   # images_PC = images_PC.detach().cpu().squeeze(0).numpy()
-    volume = renderer.pts_volume(point_cloud)
-    coords = volume.get_coord_grid().view(1,-1,3).detach().cpu().numpy()
-   # point_cloud = renderer.depth_pts(depth)
-    #point_cloud=point_cloud.view(-1,3)
-   # verts , faces = marching_cubes_naive(coords)
-
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2], alpha=0.6, s=1)
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-
+    # add a z-axis displacement to mesh 1000 of vertex
+    index = torch.randint(0, len(mesh.verts_padded()), (1000,))
+    mask = renderer.renderer_silhouette(mesh)
+    mask = mask.detach().cpu().squeeze().numpy()
+    plt.imsave('target.png',mask[:,:,:])
+    mesh.verts_padded()[:, :, 2][index] += 0.05
+    normals = renderer.render_normal(mesh)
+    plt.imshow(normals)
     plt.show()
-    fig = plot_scene({
-    "Pointcloud": {
-        "person": coords
-    }
-})
-    fig.show()
-    pass
+    # fragments = renderer.rasterize(mesh)
+    # mask  =renderer.get_mask(mesh)
+    # normal = renderer.phong_normal_shading(mesh, fragments)
+    # images = softmax_rgb_blend(normal, fragments, blend_params=blending.BlendParams(background_color=[128, 128, 255]))
+    # normals = F.normalize(images, dim=3)
+    # # save each image
+    # for i in range(len(normals)):
+    #     img = normals[i].detach().cpu().squeeze().numpy()
+
+    #     normal = (img + 1) / 2.0
+
+    #     plt.imsave(os.path.join('dataset/ScanData/rgb', meshlist[i].replace('.obj','.png')), normal )
+    #     pass
+    

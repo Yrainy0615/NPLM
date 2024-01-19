@@ -2,7 +2,55 @@ import torch
 from torch.nn import functional as F
 import numpy as np
 from scripts.model.diff_operators import gradient    
+from pytorch3d. structures import Meshes
+from scripts.model.renderer import MeshRender
+from pytorch3d.renderer import TexturesVertex, TexturesUV
+from pytorch3d.loss import chamfer_distance
+from pytorch_metric_learning import losses
 
+def chamfer_distance_contour(mask1, mask2):
+    edge1 = F.conv2d(mask1.unsqueeze(1), torch.tensor([[[[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]]]).to(mask1.device))
+    edge2 = F.conv2d(mask2.unsqueeze(1), torch.tensor([[[[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]]]).to(mask2.device))
+    edge1 = (edge1.abs() > 0.1).float()
+    edge2 = (edge2.abs() > 0.1).float()
+    
+    coords1 = edge1.nonzero().float()
+    coords2 = edge2.nonzero().float()
+    coords1 = coords1[:, 2:]/1024
+    coords2 = coords2[:, 2:]/1024
+    chamfer = chamfer_distance(coords1.unsqueeze(0), coords2.unsqueeze(0))
+    return chamfer
+
+
+def iou_loss(pred_mask, target_mask, smooth=1e-5):
+    """
+    Compute the IoU loss between two masks.
+    
+    Parameters:
+    - pred_mask (torch.Tensor): The predicted mask tensor.
+    - target_mask (torch.Tensor): The target mask tensor.
+    - smooth (float): A small constant to avoid division by zero.
+    
+    Returns:
+    - torch.Tensor: The computed IoU loss.
+    """
+    # Ensure the mask tensors are of float type
+    pred_mask = pred_mask.float()
+    target_mask = target_mask.float()
+    
+    # Compute the intersection and union
+    intersection = (pred_mask * target_mask).sum(dim=[1, 2])
+    total = (pred_mask + target_mask).sum(dim=[1, 2])
+    union = total - intersection
+    
+    # Compute the IoU
+    iou = (intersection + smooth) / (union + smooth)
+    
+    # Compute the IoU loss
+    iou_loss = 1 - iou
+    
+    # Return the mean IoU loss over the batch
+    return iou_loss.mean()
 
 def compute_loss(batch, decoder, latent_idx, latent_spc,device):
     batch_cuda_npm = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
@@ -18,38 +66,71 @@ def compute_loss(batch, decoder, latent_idx, latent_spc,device):
 
 def actual_compute_loss(batch_cuda, decoder, glob_cond, glob_cond2):
     anchor_preds = None
-    glob_cond = torch.cat((glob_cond,glob_cond2.unsqueeze(1)),dim=2)
-
+   # glob_cond = torch.cat((glob_cond,glob_cond2.unsqueeze(1)),dim=2)
+    glob_cond = glob_cond
     # prep
     sup_surface = batch_cuda['points'].clone().detach().requires_grad_() # points on face surf
     #sup_surface_outer = batch_cuda['points_non_face'].clone().detach().requires_grad_() # points on non-face surf
     sup_grad_far = batch_cuda['sup_grad_far'].clone().detach().requires_grad_() # points in unifrm ball
     sup_grad_near = batch_cuda['sup_grad_near'].clone().detach().requires_grad_() # points near/off surface
-    udf_gt_near = batch_cuda['sup_grad_near_udf'].clone().detach().requires_grad_() 
-    udf_gt_far = batch_cuda['sup_grad_far_udf'].clone().detach().requires_grad_()
+    sdf_gt_near = batch_cuda['sup_grad_near_sdf'].clone().detach().requires_grad_() 
+    sdf_gt_far = batch_cuda['sup_grad_far_sdf'].clone().detach().requires_grad_()
 
     # model computations
-    pred_surface = decoder(sup_surface, glob_cond.repeat(1, sup_surface.shape[1], 1))
-    pred_space_near = decoder(sup_grad_near, glob_cond.repeat(1, sup_grad_near.shape[1], 1))
-    pred_space_far = decoder(sup_grad_far, glob_cond.repeat(1, sup_grad_far.shape[1], 1))
-    gradient_surface = gradient(pred_surface, sup_surface)
-    
+    pred_surface = decoder(torch.cat([sup_surface, glob_cond.repeat(1, sup_surface.shape[1], 1)],dim=-1))
+    pred_space_near = decoder(torch.cat([sup_grad_near, glob_cond.repeat(1, sup_grad_near.shape[1], 1)],dim=-1))
+    pred_space_far = decoder(torch.cat([sup_grad_far, glob_cond.repeat(1, sup_grad_far.shape[1], 1)],dim=-1))
+    udf_pred_near = torch.abs(pred_space_near).requires_grad_()
+    udf_pred_far = torch.abs(pred_space_far).requires_grad_()
     # losses
-    loss_surf_udf = pred_surface.squeeze()
-    loss_space_near = torch.nn.L1Loss(reduction='none')(torch.clamp(pred_space_near.squeeze(), max=0.0001), torch.clamp(udf_gt_near, max=0.0001))
-    loss_space_far = torch.nn.L1Loss(reduction='none')(pred_space_far.squeeze(), udf_gt_far)
-    loss_normal = (gradient_surface - batch_cuda['normals']).norm(2, dim=-1)
+    gradient_surface = gradient(pred_surface, sup_surface)
+    # gradient_surface_outer = gradient(pred_surface_outer, sup_surface_outer)
+    gradient_space_far = gradient(pred_space_far, sup_grad_far)
+    gradient_space_near = gradient(pred_space_near, sup_grad_near)
 
-    lat_idx = torch.norm(glob_cond, dim=-1) ** 2
-    lat_spc = torch.norm(glob_cond2, dim=-1) ** 2
-    ret_dict = {'surf_udf': torch.mean(loss_surf_udf),
-                'normals': torch.mean(loss_normal),
-                'space_near': torch.mean(loss_space_near),
-                'space_far': torch.mean(loss_space_far),
-                'lat_idx':lat_idx.mean(),
-                'lat_spc':lat_spc.mean(),}
+
+
+    # computation of losses for geometry
+    surf_sdf_loss = torch.abs(pred_surface).squeeze()
+    #surf_sdf_loss_outer = torch.abs(pred_surface_outer).squeeze()
+
+    surf_normal_loss = (gradient_surface - batch_cuda['normals']).norm(2, dim=-1)
+    # surf_normal_loss_outer = torch.clamp((gradient_surface_outer - batch_cuda['normals_non_face']).norm(2, dim=-1),
+    #                                      None, 0.75) / 2
+
+    #  udf loss
+    udf_near_loss = F.mse_loss(sdf_gt_near.abs(), udf_pred_near.squeeze())
+    udf_far_loss = F.mse_loss(sdf_gt_far.abs(), udf_pred_far.squeeze())
+    
+    # sdf loss
+    sdf_near_loss = F.mse_loss(sdf_gt_near, pred_space_near.squeeze())
+    sdf_far_loss = F.mse_loss(sdf_gt_far, pred_space_far.squeeze())
+    
+    surf_grad_loss = torch.abs(gradient_surface.norm(dim=-1) - 1)
+    # surf_grad_loss_outer = torch.abs(gradient_surface_outer.norm(dim=-1) - 1)
+
+    space_sdf_loss = torch.exp(-1e1 * torch.abs(pred_space_far))
+    space_grad_loss_far = torch.abs(gradient_space_far.norm(dim=-1) - 1)
+    space_grad_loss_near = torch.abs(gradient_space_near.norm(dim=-1) - 1)
+    grad_loss = torch.cat([surf_grad_loss, space_grad_loss_far, space_grad_loss_near], dim=-1)
+
+    #grad_loss = torch.cat([surf_grad_loss, surf_grad_loss_outer, space_grad_loss_far, space_grad_loss_near], dim=-1)
+
+
+    lat_mag = torch.norm(glob_cond, dim=-1) ** 2
+    glob_cond = glob_cond.squeeze(1)
+
+
+    ret_dict = {'surf_sdf': torch.mean(surf_sdf_loss),
+                  'normals': torch.mean(surf_normal_loss),
+              'space_sdf': torch.mean(space_sdf_loss),
+                'grad': torch.mean(grad_loss),
+                #   'udf_near': torch.mean(udf_near_loss),
+                #   'udf_far': torch.mean(udf_far_loss),
+                 'sdf_near': torch.mean(sdf_near_loss),
+                    'sdf_far': torch.mean(sdf_far_loss),
+                    'lat_reg':lat_mag.mean()}
     return ret_dict
-
 
 def loss_joint(batch, decoder_shape, decoder_expr, latent_codes_shape, latent_codes_expr, device, epoch):
     if 'path' in batch:
@@ -226,34 +307,50 @@ def compute_loss_corresp_forward(batch, decoder, decoder_shape, latent_codes, la
         del batch['path']
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     #batch_cuda = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
-    glob_cond_shape = latent_codes_shape(batch['species'].to(device))
-    glob_cond_pose = latent_codes(batch['idx'].to(device))
-
-    if 'gt_anchors' in batch_cuda and decoder_shape is not None and decoder_shape.mlp_pos is None:
-        gt_anchors = batch_cuda['gt_anchors']
-    elif decoder_shape is not None and decoder_shape.mlp_pos is not None:
-        gt_anchors = decoder_shape.mlp_pos(glob_cond_shape[..., :decoder_shape.lat_dim_glob]).view(glob_cond_pose.shape[0], -1, 3)
-        gt_anchors += decoder.anchors.squeeze(0)
-    else:
-        gt_anchors = None
-
-    glob_cond = torch.cat([glob_cond_shape.unsqueeze(1), glob_cond_pose], dim=-1)
+    #glob_cond_shape = latent_codes_shape(batch['species'].to(device))
+    glob_cond = latent_codes(batch['idx'].to(device))
+    label = batch['label'].to(device)
+   # glob_cond = torch.cat([glob_cond_shape.unsqueeze(1), glob_cond_pose], dim=-1)
 
     points_neutral = batch_cuda['points_neutral'].clone().detach().requires_grad_()
 
     cond = glob_cond.repeat(1, points_neutral.shape[1], 1)
-    delta, _ = decoder(points_neutral, cond, gt_anchors)
+    delta= decoder(points_neutral, cond)
     pred_posed = points_neutral + delta.squeeze()
-
+    # mse loss
     points_posed = batch_cuda['points_posed']
     loss_corresp = (pred_posed - points_posed[:, :, :3])**2#.abs()
+    
+    # distance constraint
+    distance = torch.norm(glob_cond,p=2,dim=-1)
+    delta_gt = points_posed - points_neutral
+    delta_norm = torch.norm(delta_gt,p=2,dim=(1,2)) /10
+   # delta_norm =(delta_norm - delta_norm.min()) /(delta_norm.max() - delta_norm.min() + 1e-5) 
+    loss_distance = ((distance.squeeze()/delta_norm) - 1)**2
+    # nce loss
+    nce = losses.NTXentLoss(temperature=0.5).cuda()
+    # def compute_pairs(glob_cond, labels):
+    #     x = glob_cond.squeeze()
+    #     similarity = torch.nn.functional.cosine_similarity(x[None,:,:], x[:,None,:], dim=-1)
+    #     all_indices = torch.combinations(torch.arange(len(labels)), r=2).cuda()
+    #     pairs_labels = labels[all_indices]
+    #     pos_indices = all_indices[(pairs_labels[:, 0] == pairs_labels[:, 1])]
+    #     neg_indices = all_indices[(pairs_labels[:, 0] != pairs_labels[:, 1])]
+    #     pos_pairs = similarity[pos_indices[:, 0], pos_indices[:, 1]]
+    #     neg_pairs = similarity[neg_indices[:, 0], neg_indices[:, 1]]
+    #     a1, p = pos_indices.transpose(0, 1)
+    #     a2, _ = neg_indices.transpose(0, 1)
 
-    lat_mag = torch.norm(glob_cond_pose, dim=-1)**2
+    #     return pos_pairs, neg_pairs, (a1, p, a2, _)
+    # pos_pairs, neg_pairs, indices_tuple = compute_pairs(glob_cond, label)
+    loss_infonce = nce(glob_cond.squeeze(), label.squeeze())
+    
+    lat_mag = torch.norm(glob_cond, dim=-1)**2
 
     # enforce deformation field to be zero elsewhere
     samps = (torch.rand(cond.shape[0], 100, 3, device=cond.device, dtype=cond.dtype) -0.5)*2.5
 
-    delta, _ = decoder(samps, cond[:, :100, :], gt_anchors)
+    delta = decoder(samps, cond[:, :100, :])
 
 
     loss_reg_zero = (delta**2).mean()
@@ -261,26 +358,29 @@ def compute_loss_corresp_forward(batch, decoder, decoder_shape, latent_codes, la
 
     return {'corresp': loss_corresp.mean(),
             'lat_reg': lat_mag.mean(),
-            'loss_reg_zero': loss_reg_zero}
+            'loss_nce': loss_infonce,
+            'loss_reg_zero': loss_reg_zero,
+            'loss_distance': loss_distance.mean()}
 
 
-def compute_color_forward(batch, decoder, decoder_shape, latent_codes, latent_codes_shape, device, epoch=-1, exp_path=None):
+def compute_color_forward(batch, decoder, latent_codes, device, epoch=-1, exp_path=None):
     
     if 'path' in batch:
         del batch['path']
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     #batch_cuda = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
     # create  
-    points = batch_cuda['points'].clone().detach().requires_grad_()
+    points = batch_cuda['verts'][0].clone().detach().requires_grad_().to(device)
+    points = points.unsqueeze(0)
     idx_shape = torch.ones(32,1,dtype=torch.int64)
-    glob_cond_shape = latent_codes_shape(idx_shape.to(device))
+    #glob_cond_shape = latent_codes_shape(idx_shape.to(device))
     glob_cond_color = latent_codes(batch['idx'].to(device))
-    cond_shape = glob_cond_shape.repeat(1, points.shape[1],1)
     # sdf, _  = decoder_shape(points,cond_shape,None)
 
-    
+   #lat_mag = torch.norm(glob_cond_color, dim=-1) ** 2
+
     cond_color = glob_cond_color.repeat(1, points.shape[1], 1)
-    color, _ = decoder(points, cond_color, None)
+    color = decoder(torch.cat([points, cond_color],dim=-1))
     return color
 
 
@@ -297,14 +397,132 @@ def perceptual_loss(fake, real,vgg):
 
 def inversion_loss(batch, encoder,device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-    points = batch_cuda['points'].clone().detach().requires_grad_()
+    volume = batch_cuda['volume'].clone().detach().requires_grad_()
    
   
-    latent_shape_pred, latent_deform_pred = encoder(points.permute(0,2,1))
+    latent_shape_pred, latent_deform_pred = encoder.encoder_inversion(volume.squeeze())
     loss_latent_shape = F.mse_loss(latent_shape_pred, batch_cuda['latent_shape'])
     loss_latent_deform = F.mse_loss(latent_deform_pred, batch_cuda['latent_deform'])
     loss_dict = {
-        'loss_latent_shape': loss_latent_shape,
-        'loss_latent_deform': loss_latent_deform,
+        'loss_latent_shape': loss_latent_shape.mean(),
+        'loss_latent_deform': loss_latent_deform.mean(),
     }
     return loss_dict
+
+def inversion_weight(batch, encoder,device, latent_all):
+    #weight_gt = batch['weights'].to(device)
+    latent_gt = latent_all[batch['idx'].to(device)].squeeze()
+    mask = batch['mask'].to(device)
+    latent_pred  = encoder(mask.float())
+    loss_mse = F.mse_loss(latent_pred, latent_gt)
+    loss_dict = {
+        'loss_mse': loss_mse.mean()}
+    return loss_dict
+    
+def compute_verts(batch, decoder, latent_idx,device):
+    batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    points = batch_cuda['sup_points'].clone().detach().requires_grad_()
+    idx = batch.get('idx').to(device)
+    #spc = batch.get('spc').to(device)
+    glob_cond_idx = latent_idx(idx) # 1,1,512
+    # read mesh from list
+    vertices_list = [mesh.vertex_data.positions for mesh in batch['mesh']]
+    face_list = [ mesh.face_data.vertex_ids for mesh in batch['mesh']]
+
+    new_verts = [torch.tensor(vertices).to(torch.float32) for vertices in vertices_list]
+    new_faces = [torch.tensor(faces).to(torch.float32) for faces in face_list]
+
+
+        #pred_surface = decoder(points, glob_cond.repeat(1, points.shape[1], 1))
+    pred_surface_offset = decoder(torch.cat([points, glob_cond_idx.repeat(1, points.shape[1], 1)],dim=-1))
+
+    modeified_verts = []
+    for i, verts in enumerate(new_verts):
+        # 获取当前mesh的pred_surface_offset
+        current_pred_offset = pred_surface_offset[i].squeeze()
+
+        # update verts
+        verts = verts.to(device)  
+        verts[ batch['surf_index'][i], 2] = verts[batch['surf_index'][i], 2] + current_pred_offset
+        # update mesh
+        modeified_verts.append(verts.detach().cpu())
+                # return pytorch3d mesh
+
+    meshes = Meshes(verts=modeified_verts, faces=new_faces)
+    # add a loss between verts and new verts
+    loss_reg = (current_pred_offset**2).mean()
+    return meshes, loss_reg
+    
+def compute_normal(batch, decoder, latent_idx,device):
+    batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    points = batch_cuda['sup_points'].clone().detach().requires_grad_()
+    idx = batch.get('idx').to(device)
+    glob_cond_idx = latent_idx(idx) # 1,1,512
+    delta_z = decoder(points, glob_cond_idx.repeat(1, points.shape[1], 1))
+    points[:,:,2] += delta_z
+    normal_pred = gradient() 
+
+def inversion_2d(batch, encoder,decoder, latent_idx,device):
+    rgb = batch['rgb'].to(device)
+    idx = batch.get('idx').to(device)
+    points = batch['points'].to(device)
+    latent_pred = encoder(rgb.float().permute(0,3,1,2))
+    latent_gt = latent_idx[idx].squeeze()
+    sdf_pred = decoder(torch.cat([points, latent_pred.unsqueeze(1).repeat(1, points.shape[1], 1)],dim=-1))
+    loss_sdf = torch.abs(sdf_pred).squeeze()
+    #loss_mse = F.mse_loss(latent_pred, latent_gt)
+    loss_dict = {
+                 'loss_sdf': loss_sdf.mean()}
+    return loss_dict
+
+
+def compute_diff_loss(batch, decoder, latent_idx, latent_spc, device, renderer):
+    verts = batch['verts'].to(device)
+    # mask = batch['mask'].to(device)
+    rgb = batch['rgb'].to(device)
+    faces = batch['faces'].to(device)
+    idx = batch.get('idx').to(device)
+    spc = batch.get('spc').to(device)
+  #  verts_t = batch['verts_t'].to(device)
+    delta_x_gt = batch['delta_x'].to(device)
+    
+    glob_cond_idx = latent_idx(idx) # 1,1,512
+    glob_cond_spc = latent_spc(spc)
+    glob_cond = torch.cat((glob_cond_idx,glob_cond_spc.unsqueeze(1)),dim=2)
+    
+    # infoNCE loss
+   
+    delta_v = decoder(torch.cat([verts[:,:,:2], glob_cond.repeat(1, verts.shape[1], 1)],dim=-1)) # (b,n,2)
+    deform_verts = verts.clone().detach().to(device)
+    deform_verts[:, :,:2] = deform_verts[:, :,:2] + delta_v
+    deformed_mesh = Meshes(verts=deform_verts, faces=faces)
+    loss_reg_idx = torch.norm(glob_cond_idx, dim=-1) ** 2   
+    loss_reg_spc = torch.norm(glob_cond_spc, dim=-1) ** 2
+    vertex_colors = torch.ones((verts.shape[0], deformed_mesh[0].verts_packed().shape[0], 3), device=device)
+    # add a regularizer for delta_v
+   # loss_chamfer = chamfer_distance(deform_verts[:,:,:2], verts_t)
+    #loss_reg_delta = (delta_v.mean()-0.05).abs()
+    texture =  TexturesVertex(verts_features=vertex_colors)
+    deformed_mesh.textures = texture
+    img_render = renderer.renderer(deformed_mesh)
+    #loss_iou = iou_loss(mask, img_render[:,:,:,0])
+    # calculate chamfer distance between contours
+    # use opencv to calculate contours
+    loss_mse = F.mse_loss(delta_v, delta_x_gt)
+    #loss_chamfer = chamfer_distance_contour(mask.float(), img_render[:,:,:,0])
+    #loss_silh = torch.mean((mask- img_render[:,:,:,0])**2)
+    loss_dict = {
+           #      'loss_silh': loss_silh,
+                 'loss_reg_idx': loss_reg_idx.mean(),
+                 'loss_reg_spc': loss_reg_spc.mean(),   
+                'loss_mse': loss_mse,}
+             #    'loss_chamfer': loss_chamfer[0]}
+    return loss_dict, rgb, img_render
+
+    
+
+    
+    
+    
+    
+    

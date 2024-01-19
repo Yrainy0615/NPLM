@@ -7,7 +7,7 @@ import taichi as ti
 import pathlib
 import mcubes
 import trimesh
-
+import skimage.measure
 ti.init(arch=ti.cpu)
 
 MAX_DIST = 2147483647
@@ -279,27 +279,30 @@ def image_to_sdf(image):
 def mesh_from_sdf(logits, mini, maxi, resolution):
     # logits = np.reshape(logits, (resolution,) * 3)
 
-    # logits *= -1
+    logits *= -1
 
     # padding to ba able to retrieve object close to bounding box bondary
     # logits = np.pad(logits, ((1, 1), (1, 1), (1, 1)), 'constant', constant_values=1000)
-    threshold = 0.0
-    vertices, triangles = mcubes.marching_cubes(-logits, threshold)
+    #threshold = 0.0
+   # vertices, triangles = mcubes.marching_cubes(-logits, threshold)
+    level = 0
+    vertices, faces, _, _ = skimage.measure.marching_cubes(logits, level=0)
+
 
     # rescale to original scale
     step = (np.array(maxi) - np.array(mini)) / (resolution - 1)
     vertices = vertices * np.expand_dims(step, axis=0)
     vertices += [mini[0], mini[1], mini[2]]
 
-    return trimesh.Trimesh(vertices, triangles)
+    return trimesh.Trimesh(vertices, faces)
 
 
 def sdf2d_3d(sdf_image,viz_3d=False):
 
     # 定义z轴层数
-    z_layers = 32
+    z_layers = 256
     sdf_2d = image_to_sdf(sdf_image)
-    sdf_2d = cv2.resize(sdf_2d, (32,32),interpolation=cv2.INTER_AREA)
+    sdf_2d = cv2.resize(sdf_2d, (256,256),interpolation=cv2.INTER_AREA)
     # 创建3D Voxel Grid
     sdf_3d = np.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers))
 
@@ -329,8 +332,8 @@ def sdf2d_3d(sdf_image,viz_3d=False):
     return sdf_3d
 
 if __name__ == "__main__":
-        # 假设您的2D SDF是一个圆形，中心点在(50, 50)，半径是40
-    img_name = r'/home/yang/projects/parametric-leaf/dataset/LeafData/Bael/healthy/Bael_healthy_0001_mask_aligned.JPG'
+
+    img_name = r'mask.png'
 
     mySDF2D = SDF2D(img_name)
     sdf_2d = mySDF2D.mask2sdf()

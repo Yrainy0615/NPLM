@@ -1,7 +1,7 @@
 import trimesh
 import numpy as np
 import os
-from .DataManager import LeafScanManager
+from scripts.dataset.DataManager import LeafScanManager
 from multiprocessing import Pool
 import pyvista as pv
 from matplotlib import pyplot as plt

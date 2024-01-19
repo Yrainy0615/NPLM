@@ -12,6 +12,8 @@ def sample_surface(mesh, n_samps, viz=False):
     faces = mesh.face_data.vertex_ids
     normal = pcu.estimate_mesh_vertex_normals(verts, faces)
     pts, bc = pcu.sample_mesh_random(mesh.vertex_data.positions, mesh.face_data.vertex_ids, num_samples=n_samps)
+    nan_rows = np.isnan(normal).any(axis=1)
+    normal[nan_rows] = [0., 0., 1.]
     surf_points = pcu.interpolate_barycentric_coords(mesh.face_data.vertex_ids, pts, bc, mesh.vertex_data.positions)
     surf_normals = pcu.interpolate_barycentric_coords(mesh.face_data.vertex_ids, pts, bc, normal)
     # sdfs, fi, bc = pcu.signed_distance_to_mesh(mesh.vertex_data.positions, mesh.face_data.vertex_ids)

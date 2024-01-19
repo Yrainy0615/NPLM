@@ -65,20 +65,20 @@ class DeepSDF(nn.Module):
         else:
             self.activation = nn.ReLU()
 
-    def forward(self, xyz, lat_rep,anchor=None):
-        if self.map:
-            lat_rep = self.mapping(lat_rep)
+    def forward(self, xyz, lat_rep):
+        # if self.map:
+        #     lat_rep = self.mapping(lat_rep)
 
-        if self.num_freq_bands is not None:
-            pos_embeds = [xyz]
-            for freq in self.freq_bands:
-                pos_embeds.append(torch.sin(xyz* freq))
-                pos_embeds.append(torch.cos(xyz * freq))
+        # if self.num_freq_bands is not None:
+        #     pos_embeds = [xyz]
+        #     for freq in self.freq_bands:
+        #         pos_embeds.append(torch.sin(xyz* freq))
+        #         pos_embeds.append(torch.cos(xyz * freq))
 
-            pos_embed = torch.cat(pos_embeds, dim=-1)
-            inp = torch.cat([pos_embed, lat_rep], dim=-1)
-        else:
-            inp = torch.cat([xyz, lat_rep], dim=-1)
+        #     pos_embed = torch.cat(pos_embeds, dim=-1)
+        #     inp = torch.cat([pos_embed, lat_rep], dim=-1)
+        # else:
+        inp = torch.cat([xyz, lat_rep], dim=-1)
         x = inp
 
         for layer in range(0, self.num_layers - 1):
@@ -92,7 +92,7 @@ class DeepSDF(nn.Module):
             if layer < self.num_layers - 2:
                 x = self.activation(x)
 
-        return x, None
+        return x
 
 
 

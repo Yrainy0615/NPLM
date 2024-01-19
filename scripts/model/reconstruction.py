@@ -4,6 +4,10 @@ import mcubes
 import torch
 from matplotlib import pyplot as plt
 import skimage.measure
+from MeshUDF.custom_mc._marching_cubes_lewiner import udf_mc_lewiner
+import io
+from PIL import Image
+from pytorch3d.structures import Meshes,  Pointclouds, Volumes
 
 def save_mesh_image_with_camera(vertices, faces):
     fig = plt.figure()
@@ -27,19 +31,25 @@ def save_mesh_image_with_camera(vertices, faces):
     
     plt.close()
     return img
-def latent_to_mesh(decoder, latent_idx,device):
+def latent_to_mesh(decoder, latent_idx,device,size=64):
     mini = [-.95, -.95, -.95]
     maxi = [0.95, 0.95, 0.95]
-    grid_points = create_grid_points_from_bounds(mini, maxi, 256)
+    grid_points = create_grid_points_from_bounds(mini, maxi, size)
     grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
     grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
     logits = get_logits(decoder, latent_idx, grid_points=grid_points,nbatch_points=2000)
-    mesh = mesh_from_logits(logits, mini, maxi,256)
-    # if len(mesh.vertices)==0:
-    #     return None, None
-    # else:
-    #     img = save_mesh_image_with_camera(mesh.vertices, mesh.faces)
-    return mesh 
+    try:
+        mesh_sdf = mesh_from_logits(logits, mini, maxi,size)
+    except:
+        print('no mesh found for sdf')
+        mesh_sdf = None
+    try:
+        verts, faces ,_,_ = udf_mc_lewiner(np.abs(logits.reshape(size,size,size).astype(np.float32)), grid_points.detach().cpu().numpy().reshape(size,size,size,3).astype(np.float32))
+        mesh_udf = trimesh.Trimesh(verts, faces, process=False)
+    except: 
+        print('no mesh found for udf')
+        mesh_udf = None
+    return mesh_sdf ,  mesh_udf
 
 def create_grid_points_from_bounds(minimun, maximum, res, scale=None):
     if scale is not None:
@@ -76,7 +86,8 @@ def mesh_from_logits(logits, mini, maxi, resolution):
     step = (np.array(maxi) - np.array(mini)) / (resolution - 1)
     vertices = vertices * np.expand_dims(step, axis=0)
     vertices += [mini[0], mini[1], mini[2]]
-
+    # return pytorch3d mesh
+    #return Meshes(verts=[torch.from_numpy(vertices.copy()).float()], faces=[torch.from_numpy(triangles.copy()).int()])
     return trimesh.Trimesh(vertices, triangles)
 
 def get_logits(decoder,
@@ -90,7 +101,7 @@ def get_logits(decoder,
     logits_list = []
     for points in grid_points_split:
         with torch.no_grad():
-            logits = decoder(points, encoding.repeat(1, points.shape[1], 1))
+            logits = decoder(torch.cat([points, encoding.repeat(1, points.shape[1], 1)],dim=-1))
             logits = logits.squeeze()
             logits_list.append(logits.squeeze(0).detach().cpu())
 
@@ -135,7 +146,7 @@ def get_logits_backward(decoder_shape,
 def deform_mesh(mesh,
                 deformer,
                 lat_rep,
-                anchors,
+                anchors=None,
                 lat_rep_shape=None):
     points_neutral = torch.from_numpy(np.array(mesh.vertices)).float().unsqueeze(0).to(lat_rep.device)
 
@@ -151,7 +162,7 @@ def deform_mesh(mesh,
             if anchors is not None:
                 d, _ = deformer(points, glob_cond, anchors.unsqueeze(1).repeat(1, points.shape[1], 1, 1))
             else:
-                d, _ = deformer(points, glob_cond, None)
+                d = deformer(points, glob_cond)
             delta_list.append(d.detach().clone())
 
             torch.cuda.empty_cache()

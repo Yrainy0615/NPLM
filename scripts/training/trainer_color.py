@@ -10,19 +10,26 @@ from pytorch3d.structures import Pointclouds
 from pytorch3d.vis.plotly_vis import AxisArgs, plot_batch_individually, plot_scene
 from pytorch3d.renderer import (
     look_at_view_transform,
-    FoVOrthographicCameras, 
+    MeshRenderer, 
     FoVPerspectiveCameras,
-    PointsRasterizationSettings,
-    PointsRenderer,
-    PulsarPointsRenderer,
-    PointsRasterizer,
+    RasterizationSettings,
+    PointLights,
+    SoftPhongShader,
+    MeshRasterizer,
     AlphaCompositor,
+    TexturesVertex
 )
 from PIL import Image
 import torchvision.utils as vutils
 import torch.nn as nn
 import torchvision
-
+import yaml
+from scripts.dataset.sdf_dataset import LeafShapeDataset, LeafColorDataset
+from torch.utils.data import DataLoader
+from scripts.model.fields import UDFNetwork
+import argparse
+from scripts.model.discriminator import Discriminator
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 def compute_gradient_penalty(real, fake, discriminator, lambda_pen,device):
     # Compute the sample as a linear combination
     alpha = torch.rand(real.shape[0], 1, 1, 1).to(device)
@@ -47,16 +54,16 @@ def compute_gradient_penalty(real, fake, discriminator, lambda_pen,device):
     penalty = penalty * lambda_pen
     return penalty
 
-def save_grid_image(tensor, nrow=8, padding=2):
+def save_grid_image(tensor, nrow=1, padding=2):
    # images = tensor.permute(0, 3, 1, 2)
     grid = vutils.make_grid(tensor, nrow=nrow, padding=padding)
 
     grid = (grid * 255).byte().permute(1, 2, 0).cpu().numpy()
 
-    im = Image.fromarray(grid)
+ 
 
     #im.save('grid_image.png')
-    return im
+    return grid
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -67,19 +74,18 @@ def weights_init(m):
         nn.init.constant_(m.bias.data, 0)
 
 class ColorTrainer(object):
-    def __init__(self, decoder, decoder_shape,cfg, 
-                 trainset,trainloader,discriminator,device):
+    def __init__(self, decoder,cfg, 
+                 trainset,trainloader,device):
         self.decoder = decoder
-        self.decoder_shape = decoder_shape
+
         self.cfg = cfg['training']
         # latent initializaiton
-        self.latent_shape = torch.nn.Embedding(7, decoder_shape.lat_dim, max_norm = 1.0, sparse=True, device = device).float()
-        self.latent_shape.requires_grad_  = False
-        self.latent_color = torch.nn.Embedding(len(trainset), self.decoder.lat_dim_expr, max_norm = 1.0, sparse=True, device = device).float()
+    
+        self.latent_color = torch.nn.Embedding(len(trainset), self.decoder.lat_dim, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(self.latent_color.weight.data, 0.0, 0.01)
         print(self.latent_color.weight.data.shape)
-        print(self.latent_color.weight.data.norm(dim=-1).mean())
-        self.init_shape_state(cfg['training']['shape_ckpt'], 'checkpoints/')
+        #print(self.latent_color.weight.data.norm(dim=-1).mean())
+       # self.init_shape_state(cfg['training']['shape_ckpt'], 'checkpoints/')
         
         self.trainloader = trainloader
         self.device = device
@@ -93,24 +99,41 @@ class ColorTrainer(object):
         self.checkpoint_path = self.cfg['save_path']
         
         # discriminator
-        self.discriminator = discriminator
+        self.discriminator = Discriminator(3,64)
         self.discriminator.apply(weights_init)
+        self.discriminator = self.discriminator.to(device)
         self.criterion = torch.nn.BCELoss()
-        self.optimizer_D = optim.Adam(self.discriminator.parameters(), lr=0.000002, betas=(0.5, 0.999))
+        self.optimizer_D = optim.Adam(self.discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
         self.mse = torch.nn.MSELoss()
         self.vgg = torchvision.models.vgg19(pretrained=True).features.to(device).eval()
         # renderer
-        R, t = look_at_view_transform(0.00001, 34, 138)
-        cameras = FoVPerspectiveCameras(device=self.device, R=R, T=t)
-        raster_settings = PointsRasterizationSettings(
+        R, T = look_at_view_transform(1.5, 0, 180) 
+        cameras = FoVPerspectiveCameras(device=device, R=R, T=T)
+        raster_settings = RasterizationSettings(
             image_size=64, 
-            radius=0.01, 
-            points_per_pixel=1
+            blur_radius=0.0, 
+            faces_per_pixel=1, 
         )
-        self.renderer = PointsRenderer(
-            rasterizer=PointsRasterizer(cameras=cameras, raster_settings=raster_settings),
-            compositor=AlphaCompositor()
+
+        # Place a point light in front of the object. As mentioned above, the front of the cow is facing the 
+        # -z direction. 
+        lights = PointLights(device=device, location=[[0.0, 0.0, -3.0]])
+
+        # Create a Phong renderer by composing a rasterizer and a shader. The textured Phong shader will 
+        # interpolate the texture uv coordinates for each vertex, sample from a texture image and 
+        # apply the Phong lighting model
+        self.renderer = MeshRenderer(
+            rasterizer=MeshRasterizer(
+                cameras=cameras, 
+                raster_settings=raster_settings
+            ),
+            shader=SoftPhongShader(
+                device=device, 
+                cameras=cameras,
+                lights=lights
+            )
         )
+
         
         
     def init_shape_state(self, ckpt, path):
@@ -199,9 +222,8 @@ class ColorTrainer(object):
                        },
                        path)
        
-    def train_step(self, batch):
+    def train_step(self, batch,epoch):
         self.decoder.train()
-        self.decoder_shape.eval()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
         
@@ -209,72 +231,95 @@ class ColorTrainer(object):
         for p in self.discriminator.parameters():
             p.requires_grad = True
         self.optimizer_D.zero_grad() 
-        real_label = torch.rand(batch['rgb'].shape[0], device=self.device) * 0.1 + 0.9  # Random values between 0.9 and 1.0
-        fake_label = torch.rand(batch['rgb'].shape[0], device=self.device) * 0.1  # Random values between 0 and 0.1
-       
-        color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
-                                decoder=self.decoder, device=self.device,
-                                latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
-        point_cloud = Pointclouds(points=batch['points'].to(self.device).to(dtype=torch.float32), features=color)
-
-        # real 
-        self.discriminator.zero_grad()
-        real = batch['rgb'].to(self.device)
-        real = real.permute(0,3,1,2).float()
-        #label = torch.full((batch['rgb'].shape[0],), real_label, dtype=torch.float, device=self.device)
-        output_real = self.discriminator(real).view(-1)
-        errD_real = self.criterion(output_real, real_label)
-        errD_real.backward()
-
-        # fake
-        fake = self.renderer(point_cloud)
-
-        # label.fill_(fake_label)
-        fake = fake.permute(0,3,1,2)
-        output_fake = self.discriminator(fake.detach()).view(-1)
-        errD_fake = self.criterion(output_fake, fake_label)
-        errD_fake.backward()
-        errD = errD_real + errD_fake
-        #gradient_penalty = compute_gradient_penalty(real, fake.detach(), self.discriminator, self.cfg['lambda_pen'],device=self.device)
-        #loss_w = torch.mean(output_fake - output_real + gradient_penalty)
-
-       #loss_w.backward()
-        self.optimizer_D.step()
-       # wdist = torch.mean(output_real - output_fake)
-        loss_dict = {'loss_D_real': errD_real,
-                     'loss_D_fake': errD_fake,}
-                   #  'gradient_penalty': gradient_penalty.mean()}
-
+      
+        # color,lat_mean = compute_color_forward(batch, 
+        #                         decoder=self.decoder, device=self.device,
+        #                         latent_codes=self.latent_color)
+        # batch['mesh'][0].textures = TexturesVertex(verts_features=color)
         
-        # train generator
-        for i in range(5):
+        if epoch < 0:
+            real = batch['rgb'][0]
+            real[real==0] = 255
+            real_tensor = torch.from_numpy(real/255).float().to(device)
+            fake = self.renderer(batch['mesh'][0].to(device))
+            loss_mse =   (fake.squeeze(0)[:,:,:3]- real_tensor).pow(2).mean()
+            loss_mse.backward()
+            self.optimizer_decoder.step()
+            self.optimizer_latent.step()
+            loss_dict = {'loss_mse': loss_mse}
+            fake_result = save_grid_image(fake.permute(0,3,1,2))
+            real_result = save_grid_image(real_tensor.unsqueeze(0).permute(0,3,1,2))
+            return loss_dict, fake_result, real_result
+        else:
+            # train discriminator
+            real = batch['rgb'][0]
+            real[real==0] = 255
+            # float type
+            
+            real_tensor = torch.from_numpy(real/255).float().unsqueeze(0).to(self.device)
+            color = compute_color_forward(batch,decoder=self.decoder, 
+                                          latent_codes=self.latent_color ,device=self.device)
+            
+            batch['mesh'][0].textures = TexturesVertex(verts_features=color)
+            fake = self.renderer(batch['mesh'][0].to(self.device))
+            real_label = torch.rand(real_tensor.shape[0], device=self.device) * 0.1 + 0.9  # Random values between 0.9 and 1.0
+            fake_label = torch.rand(real_tensor.shape[0], device=self.device) * 0.1 +0.01  # Random values between 0 and 0.1
+            output_real = self.discriminator(real_tensor.permute(0,3,1,2)).view(-1)
+            errD_real = self.criterion(output_real, real_label)
+
+            # fake
+            fake = self.renderer(batch['mesh'][0].to(self.device))
+
+            # label.fill_(fake_label)
+            fake = fake[:,:,:,:3].permute(0,3,1,2)
+            output_fake = self.discriminator(fake).view(-1) 
+            if torch.isnan(output_fake).any():
+                raise ValueError("NaN detected in forward pass")
+
+            errD_fake = self.criterion(output_fake, fake_label)
+            errD = errD_real + errD_fake
+            errD.backward()
+            self.optimizer_D.step()
+        # wdist = torch.mean(output_real - output_fake)
+            loss_dict = {'loss_D_real': errD_real,
+                        'loss_D_fake': errD_fake,}
+                    #  'gradient_penalty': gradient_penalty.mean()}
+
+            
+            # train generator
+
             for p in self.discriminator.parameters():  # reset requires_grad
                 p.requires_grad = False
+            self.optimizer_D.zero_grad()
             self.optimizer_decoder.zero_grad()
-            color = compute_color_forward(batch, decoder_shape=self.decoder_shape,
-                                decoder=self.decoder, device=self.device,
-                                latent_codes=self.latent_color, latent_codes_shape=self.latent_shape)
-            point_cloud = Pointclouds(points=batch['points'].to(self.device).to(dtype=torch.float32), features=color)
-            fake = self.renderer(point_cloud)   
-            fake = fake.permute(0,3,1,2)
+            self.latent_color.zero_grad()
+            color= compute_color_forward(batch, decoder=self.decoder,
+                                device=self.device,
+                                latent_codes=self.latent_color )
+            batch['mesh'][0].textures = TexturesVertex(verts_features=color)
+            fake = self.renderer(batch['mesh'][0].to(self.device))   
+            fake = fake[:,:,:,:3].permute(0,3,1,2)
+
             # label.fill_(real_label)
-            loss_G = self.criterion(self.discriminator(fake).view(-1), real_label)
+            output_fake = self.discriminator(fake).view(-1)
+            if torch.isnan(output_fake).any():
+                raise ValueError("NaN detected in forward pass")
+            loss_G = self.criterion(output_fake, real_label)
+
             #output_fake = self.discriminator(fake).view(-1)
-            
-            # mse loss
-            mask = (fake != 0 ).float()
-            loss_mse = self.mse(fake * mask, real*mask)/mask.sum()
+            gradient_penalty = compute_gradient_penalty(real_tensor.permute(0,3,1,2), fake, self.discriminator, self.cfg['lambda_pen'],device=self.device)
+            loss_w = torch.mean(fake -real_tensor.permute(0,3,1,2) + gradient_penalty)
             
             # perceptual loss
-            loss_per = perceptual_loss(vgg=self.vgg, fake=fake, real=real)
+            loss_per = perceptual_loss(vgg=self.vgg, fake=fake, real=real_tensor.permute(0,3,1,2))
             
+            # color smoothness
+            color_gradients = torch.sqrt(torch.sum((color[0][:-1] - color[0][1:]) ** 2, dim=1)+1e-8)
+            color_smoothness_loss = torch.mean(color_gradients)
             
             #loss_G = - torch.mean(output_fake)
-            loss = loss_G + self.cfg['lambdas']['loss_mse'] * loss_mse   # + self.cfg['lambdas']['loss_per'] * loss_per
-            if i<4:
-                loss.backward(retain_graph=True)
-            else:
-                loss.backward()
+            loss = loss_G*0.3  + loss_w *0.1  + loss_per+ color_smoothness_loss *10
+            loss.backward()
             # if self.cfg['grad_clip'] is not None:
             #     torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=self.cfg['grad_clip'])
 
@@ -283,13 +328,14 @@ class ColorTrainer(object):
 
             self.optimizer_decoder.step()
             self.optimizer_latent.step()
-        fake_result = save_grid_image(fake)
-        real_result = save_grid_image(real)
-        loss_dict.update({'loss_G': loss_G,})
-                      #     'loss_mse': loss_mse,})
-        
+            fake_result = save_grid_image(fake)
+            real_result = save_grid_image(real_tensor.permute(0,3,1,2))
 
-        return loss_dict    , fake_result, real_result
+            loss_dict.update({'loss_G': loss_G,
+                            'loss_per': loss_per,
+                            'loss_w': loss_w,
+                            'color_smoothness_loss': color_smoothness_loss})
+            return loss_dict  , fake_result, real_result
     
     
 
@@ -298,12 +344,13 @@ class ColorTrainer(object):
         # start = self.load_checkpoint()
         start =0
         ckp_interval =self.cfg['ckpt_interval']
+        torch.autograd.set_detect_anomaly(True)
         for epoch in range(start, epochs):
             self.reduce_lr(epoch)
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict, fake, real = self.train_step(batch)
+                loss_dict, fake, real = self.train_step(batch,epoch)
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
   
                 wandb.log(loss_values)
@@ -323,6 +370,37 @@ class ColorTrainer(object):
                 print_str += " " + k + " {:06.4f}".format(sum_loss_dict[k])
             print(print_str)
                 
+if __name__ == '__main__':       
+    parser = argparse.ArgumentParser(description='RUN Leaf NPM')
+    parser.add_argument('--gpu', type=int, default=3, help='gpu index')
+    parser.add_argument('--wandb', type=str, default='*', help='run name of wandb')
+    parser.add_argument('--output', type=str, default='shape', help='output directory')
+    # setting
+
+    args = parser.parse_args()
+    os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+    config = 'NPLM/scripts/configs/npm_color.yaml'
+    CFG = yaml.safe_load(open(config, 'r'))
+    wandb.init(project='NPLM', name =args.wandb)
+    wandb.config.update(CFG)
+    trainset = LeafColorDataset(mode='train',
+                        batch_size=CFG['training']['batch_size'],
+                        root_dir=CFG['training']['root_dir_color'])
+#    trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=0)
+    trainloader = trainset.get_loader()
+
+    decoder = UDFNetwork(d_in=CFG['decoder']['decoder_lat_dim'],
+                         d_hidden=CFG['decoder']['decoder_hidden_dim'],
+                         d_out=CFG['decoder']['decoder_out_dim'],
+                         n_layers=CFG['decoder']['decoder_nlayers'],
+                         udf_type='sdf')
+
+    decoder = decoder.to(device)
+    trainer = ColorTrainer(decoder, CFG, trainset,trainloader,device)
+    trainer.train(30001)
             
                 
             

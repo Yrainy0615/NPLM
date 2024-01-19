@@ -6,46 +6,12 @@ from scripts.model.loss_functions import compute_loss
 import os
 import numpy as np
 import wandb
-from scripts.model.reconstruction import deform_mesh, get_logits, mesh_from_logits,create_grid_points_from_bounds
+from scripts.model.reconstruction import mesh_from_logits, save_mesh_image_with_camera
 from matplotlib import pyplot as plt
 import io
 from PIL import Image
 
-def save_mesh_image_with_camera(vertices, faces):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor((1, 1, 1))
-    fig.set_facecolor((1, 1, 1))
-    ax.plot_trisurf(vertices[:, 0], vertices[:, 1], faces, vertices[:, 2], shade=True, color='blue')
 
-    ax.view_init(elev=90, azim=180)  
-    ax.dist = 8  
-    ax.set_box_aspect([1,1,1.4]) 
-    ax.set_xlim(-1,1)
-    ax.set_ylim(-1,1)
-    ax.set_zlim(-1,1)
-    plt.axis('off')  
-    
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=300)
-    buf.seek(0)
-    img = Image.open(buf)
-    
-    plt.close()
-    return img
-def latent_to_mesh(decoder, latent_idx,device):
-    mini = [-.95, -.95, -.95]
-    maxi = [0.95, 0.95, 0.95]
-    grid_points = create_grid_points_from_bounds(mini, maxi, 256)
-    grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
-    grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
-    logits = get_logits(decoder, latent_idx, grid_points=grid_points,nbatch_points=2000)
-    mesh = mesh_from_logits(logits, mini, maxi,256)
-    if len(mesh.vertices)==0:
-        return None, None
-    else:
-        img = save_mesh_image_with_camera(mesh.vertices, mesh.faces)
-    return mesh ,img
   
 
 class ShapeTrainer(object):
@@ -201,7 +167,7 @@ class ShapeTrainer(object):
                 self.save_checkpoint(epoch)
             if epoch %100 ==0:
                 lat = torch.concat([self.latent_idx.weight[6], self.latent_spc.weight[6]])
-                mesh, img = latent_to_mesh(self.decoder,lat, self.device)
+                mesh_mc, mesh_udf = latent_to_mesh(self.decoder,lat, self.device)
                     # Log the combined image with wandb
                 if img is not None:
                     wandb.log({'shape': wandb.Image(img)})

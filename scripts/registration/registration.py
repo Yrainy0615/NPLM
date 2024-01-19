@@ -359,12 +359,12 @@ class LeafRegistration():
             pca_template = self.find_pca(template)
             keypoints_temp = self.find_keypoints(template,pca_template)
             keypoints_target = self.find_keypoints(target,pca_target)
-            keypoints_temp = {
-                'top':self.vertex_info['top'][0],
-                'base':self.vertex_info['base'][0],
-                'left':self.vertex_info['left'][0],
-                'right':self.vertex_info['right'][0]
-            }
+            # keypoints_temp = {
+            #     'top':self.vertex_info['top'][0],
+            #     'base':self.vertex_info['base'][0],
+            #     'left':self.vertex_info['left'][0],
+            #     'right':self.vertex_info['right'][0]
+            # }
             # template_contour = self.get_boundary(template)
             template_contour = self.vertex_info['contour']
             # get boundary index of target mesh

@@ -1,23 +1,27 @@
-shape_decoder: 
+decoder: 
   decoder_lat_dim: 512
   decoder_hidden_dim: 1024
   decoder_nlayers: 8
 
 training:
-  root_dir: sample_result/inversion_train
+  root_dir: sample_result/shape_deform
+  root_dir_color: dataset/LeafData
   n_samples: 2500
   n_sample_noise: 1000
-  save_path: checkpoints/inversion
-  batch_size: 1
-  ckpt_interval: 5000
+  save_path: checkpoints/inversion/
+  batch_size: 32
+  ckpt_interval: 10
   sigma_near: 0.01
-  checkpoint_shape: checkpoints/cg_bs1/cgshape_1023_epoch__15000.tar
+  checkpoint_shape: checkpoints/2dShape/exp-2d-sdf__4000.tar
   checkpoint_deform: checkpoints/deform_epoch_30000.tar
-  checkpoint_encoder: checkpoints/inversionencoder_epoch_5000.tar
-  lr: 0.0005
+  checkpoint_encoder: checkpoints/inversion/inversion_epoch_110.tar
+  
+  lr: 0.0001
   weight_decay: 0.02
   lr_decay_factor: 0.5
-  lr_decay_interval: 1000
+  lr_decay_interval: 10
   lambdas:
     loss_latent_shape: 1
     loss_latent_deform: 1
+    loss_mse: 1
+    loss_sdf: 1

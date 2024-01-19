@@ -1,41 +1,57 @@
-shape_decoder:
-  decoder_lat_dim: 512
-  decoder_hidden_dim: 1024
+decoder:
+  decoder_lat_dim: 64
+  decoder_hidden_dim: 512
+  decoder_nlayers: 8
+  decoder_out_dim: 2
 deform_decoder:
   decoder_hidden_dim: 512
   decoder_lat_dim: 200
   decoder_nblocks: -1
+
+discriminator:
+  channel: 3
+  size: 64
+
+
 encoder: null
 has_forward: true
 training:
-  save_path: checkpoints/
+  save_path: checkpoints/2d_diff/
   root_dir: dataset/ScanData
-  root_dir_color: dataset/LeafData
-  batch_size: 64
-  ckpt_interval: 5000
+  root_dir_color: dataset/data
+  save_name: exp_2d_diff
+  batch_size: 1
+  image_size: 1024 
+  ckpt_interval: 1000
   grad_clip: 0.025
   grad_clip_lat: 0.025
-  npoints_decoder: 2000
-  npoints_decoder_non: 250
   sigma_near: 0.001
   weight_decay: 0.02
   lambdas:
     lat_reg: 5.0e-05
-    #w_distance: 1
     loss_D_fake: 1
     loss_D_real: 1
-    loss_G: 1
-    #loss_mse: 1
-    #gradient_penalty: 1
-    #loss_per: 0.2
+    loss_G: 0.5
+    loss_mse: 1
+    loss_w: 0.1
+    loss_per: 10
+    normal_mse: 1
+    loss_silh: 1 
+    loss_reg_idx: 1
+    loss_reg_spc: 1
+    loss_chamfer: 1
+    color_smoothness_loss: 100
+    loss_iou: 1
+
   lambda_pen:  10
-  lr: 0.001
+  lr: 0.01
+  lr_dis: 0.00001
   lr_decay_factor: 0.2
   lr_decay_factor_lat: 0.2
   lr_decay_interval: 1000
   lr_decay_interval_lat: 1000
   lr_lat: 0.005
-  npoints_decoder: 1000
+  npoints_decoder: 2500
   shape_ckpt: 30000
   shape_exp_name: SHAPE_EXP_NAME
   sigma_near: 0.01

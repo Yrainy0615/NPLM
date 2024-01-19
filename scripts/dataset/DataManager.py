@@ -85,6 +85,9 @@ class LeafScanManager():
 class LeafImageManger():
     def __init__(self, root_dir):
         self.root_dir = root_dir
+        # get all  subfolder name
+        self.species = [folder for folder in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, folder))]
+        
         self.all_species = os.listdir(root_dir)
         with open('dataset/LeafData/train_shape.json', 'r') as f:
             self.train_label = json.load(f)
@@ -134,7 +137,7 @@ class LeafImageManger():
         all_mesh = []
         for root, dirs, files in os.walk(self.root_dir):
             for file in files:
-                if 'obj' in file and 'healthy' in file:
+                if 'obj'  in file:
                     all_mesh.append(os.path.join(root, file))
         
         return all_mesh

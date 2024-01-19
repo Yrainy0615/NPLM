@@ -13,7 +13,7 @@ import torch.nn.functional as F
 class NDF(nn.Module):
 
 
-    def __init__(self,hidden_dim=256):
+    def __init__(self,hidden_dim=32):
         super(NDF, self).__init__()
         self.conv_in = nn.Conv3d(1, 16, 3, padding=1, padding_mode='replicate')  # out: 256 ->m.p. 128
         self.conv_0 = nn.Conv3d(16, 32, 3, padding=1, padding_mode='replicate')  # out: 128
@@ -33,6 +33,12 @@ class NDF(nn.Module):
         self.fc_2 = nn.Conv1d(hidden_dim , hidden_dim, 1)
         self.fc_out = nn.Conv1d(hidden_dim, 1, 1)
         self.actvn = nn.ReLU()
+        self.fc_shape_1 = nn.Conv1d(640, 512, 1)
+       # self.fc_shape_2 = nn.Conv1d(1024, 512, 1)
+        self.fc_pose_1 = nn.Conv1d(640, 200, 1)
+      #  self.fc_pose_2 = nn.Conv1d(1024, 200, 1)
+        
+        
 
         self.maxpool = nn.MaxPool3d(2)
 
@@ -94,6 +100,51 @@ class NDF(nn.Module):
         f_6 = net
 
         return f_0, f_1, f_2, f_3, f_4, f_5, f_6
+    
+    def encoder_inversion(self,x):
+        x = x.unsqueeze(1)
+        f_0 = x
+
+        net = self.actvn(self.conv_in(x))
+        net = self.conv_in_bn(net)
+        f_1 = net
+        net = self.maxpool(net)  # out 128
+
+        net = self.actvn(self.conv_0(net))
+        net = self.actvn(self.conv_0_1(net))
+        net = self.conv0_1_bn(net)
+        f_2 = net
+        net = self.maxpool(net)  # out 64
+
+        net = self.actvn(self.conv_1(net))
+        net = self.actvn(self.conv_1_1(net))
+        net = self.conv1_1_bn(net)
+        f_3 = net
+        net = self.maxpool(net)
+
+        net = self.actvn(self.conv_2(net))
+        net = self.actvn(self.conv_2_1(net))
+        net = self.conv2_1_bn(net)
+        f_4 = net
+        net = self.maxpool(net)
+
+        net = self.actvn(self.conv_3(net))
+        net = self.actvn(self.conv_3_1(net))
+        net = self.conv3_1_bn(net)
+        f_5 = net
+        net = self.maxpool(net)
+
+        net = self.actvn(self.conv_4(net))
+        net = self.actvn(self.conv_4_1(net))
+        net = self.conv4_1_bn(net)
+        f_6 = net # (5,128,4,4,4)
+        
+        feature = f_6.view(1,-1).unsqueeze(-1)
+        lat_shape = self.fc_shape_1(feature)
+       # lat_shape = self.fc_shape_2(lat_shape)
+        lat_pose = self.fc_pose_1(feature)
+     #   lat_pose = self.fc_pose_2(lat_pose)
+        return lat_shape.squeeze(-1), lat_pose.squeeze(-1)
 
     def decoder(self, p, f_0, f_1, f_2, f_3, f_4, f_5, f_6):
 
@@ -136,7 +187,7 @@ if __name__ == "__main__":
     device = torch.device('cuda')
     model = NDF()
     model.cuda()
-    points = torch.randn([2000,3]).unsqueeze(0).to(device)
-    latent = torch.randn([512,3]).unsqueeze(0).to(device)
-    model(p=points, x = latent)
+    points = torch.randn([5,256,256,256]).to(device)
+    latent = torch.randn([512]).to(device)
+    model(x=points,p = latent)
     pass

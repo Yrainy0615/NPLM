@@ -7,29 +7,32 @@ decoder:
 training:
   root_dir: dataset/ScanData
   root_dir_color: dataset/LeafData
-  save_path: checkpoints/cg_bs8
-  batch_size: 8
-
-  ckpt_interval: 500
+  save_path: checkpoints/2dShape
+  batch_size: 16
+  save_name: 2d-sdf-normal1
+  ckpt_interval: 100
   grad_clip: 0.1
   grad_clip_lat: 0.1
   lr: 0.0005
-  lr_lat: 0.001
+  lr_lat: 0.01
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.5
-  lr_decay_interval: 500
-  lr_decay_interval_lat: 500
+  lr_decay_interval: 1000
+  lr_decay_interval_lat: 1000
   npoints_decoder: 2000
   npoints_decoder_non: 500
-  sigma_near: 0.0001
+  sigma_near: 0.005
   weight_decay: 0.02
   lambdas: 
-    lat_idx: 0.002
+    lat_reg: 0.002
     lat_spc: 0.002
-    surf_udf: 2
-    normals: 0.2
-    space_far: 1
-    space_near: 1
+    surf_sdf: 2
+    normals: 0.3
+    space_sdf: 0.01
+    udf_far: 1
+    udf_near: 1
+    sdf_far: 1
+    sdf_near: 1
     grad: 0.1
     anchors: 0.0
     symm_dist: 0.0

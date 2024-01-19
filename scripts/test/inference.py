@@ -12,6 +12,8 @@ from scripts.model.reconstruction import mesh_from_logits, get_logits, create_gr
 from scripts.model.renderer import MeshRender
 from pytorch3d.io import load_ply, load_obj
 from pytorch3d.structures import Meshes,  Pointclouds, Volumes
+from matplotlib import pyplot as plt
+from scripts.model.fields import UDFNetwork
 
 def load_mesh(path):
         mesh = pcu.TriangleMesh()
@@ -39,7 +41,7 @@ def inference(input,encoder, decoder_shape, decoder_deform,grid_points,device):
     mesh_base.export('inference_base.ply')
     deform = deform_mesh(mesh=mesh_base, deformer=decoder_deform, lat_rep=latent_deform, anchors=None, lat_rep_shape=latent_shape)
     deform.export('inference.ply')
-    mesh_base.export('inference_base.ply')
+   
     return deform
     
     
@@ -61,13 +63,11 @@ if __name__ == "__main__":
     render = MeshRender(device=device)
     
     # initialize for shape decoder
-    decoder_shape = DeepSDF(
-            lat_dim=CFG['shape_decoder']['decoder_lat_dim'],
-            hidden_dim=CFG['shape_decoder']['decoder_hidden_dim'],
-            geometric_init=True,
-            out_dim=1,
-            map =True
-        ) 
+    decoder_shape = UDFNetwork(d_in=CFG['shape_decoder']['decoder_lat_dim'],
+                         d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
+                         d_out=1,
+                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
+                         udf_type='sdf')
     checkpoint_shape = torch.load(CFG['training']['checkpoint_shape'])
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape.eval()
@@ -94,14 +94,24 @@ if __name__ == "__main__":
     
     
     # input
-    meshfile = 'sample_result/deform_interpolation/deform_0001.ply'
+    meshfile = 'sample_result/shape_deform/deform_0017.ply'
     #sample = sample_surface(mesh, n_samps=CFG['training']['n_samples'])
     verts, face= load_ply(meshfile)
     
     mesh = Meshes(verts=verts.unsqueeze(0), faces=face.unsqueeze(0)).to(device)
     depth = render.get_depth(mesh)
+    # save depth img
+    depth_img = depth.detach().cpu().squeeze().numpy()
+    plt.imsave('inference_sample{i}.png', depth_img)
+    
     point_cloud = render.depth_pointcloud(depth)
-    pts = point_cloud._points_padded.squeeze(0) 
+    # save point cloud image
+    pts = point_cloud.points_packed().detach().cpu().numpy()
+    figure = plt.figure()
+    for pt in pts:
+        plt.scatter(pt[0], pt[1], pt[2])
+    plt.savefig('inference_point_cloud.png')
+
     grid_points = get_grid_points()
-    output = inference(pts, encoder, decoder_shape, decoder_deform, grid_points,device)
+    output = inference(point_cloud.points_packed(), encoder, decoder_shape, decoder_deform, grid_points,device)
     output.export('inference.ply')

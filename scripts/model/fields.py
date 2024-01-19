@@ -123,7 +123,7 @@ class UDFNetwork(nn.Module):
                  multires=0,
                  scale=1,
                  bias=0.5,
-                d_in_spatial =3,
+                d_in_spatial =2,
                  geometric_init=True,
                  weight_norm=True,
                  udf_type='abs',
@@ -139,7 +139,7 @@ class UDFNetwork(nn.Module):
             embed_fn, input_ch = get_embedder(multires, input_dims=d_in)
             self.embed_fn_fine = embed_fn
             dims[0] = input_ch
-        self.mapping = MappingNet(self.lat_dim, self.lat_dim)
+        # self.mapping = MappingNet(self.lat_dim, self.lat_dim)
         self.num_layers = len(dims)
         self.skip_in = skip_in
         self.scale = scale
@@ -192,10 +192,10 @@ class UDFNetwork(nn.Module):
         elif self.udf_type == 'sdf':
             return x
 
-    def forward(self, xyz, lat_rep):
-        lat_rep = self.mapping(lat_rep)
-        inputs = xyz * self.scale
-        inputs = torch.cat([inputs, lat_rep], dim=-1)
+    def forward(self, inputs):
+       # lat_rep = self.mapping(lat_rep)
+        # inputs = xyz * self.scale
+        # inputs = torch.cat([inputs, lat_rep], dim=-1)
         if self.embed_fn_fine is not None:
             inputs = self.embed_fn_fine(inputs)
 

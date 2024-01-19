@@ -1,10 +1,30 @@
 import trimesh
 import os
-import o3d
+
 from sklearn.decomposition import PCA
 import numpy as np 
 import igl
+import pyvista
+import pyacvd
+def repair_mesh(filename):
+    # change trimesh to pyvista mesh
+    mesh = trimesh.load(filename)
+    mesh = pyvista.wrap(mesh)
+    # plot original mesh
 
+
+    clus = pyacvd.Clustering(mesh)
+    clus.subdivide(3)
+    clus.cluster(3000)
+
+    # plot clustered cow mesh
+
+    # remesh
+    remesh = clus.create_mesh()
+
+    # plot uniformly remeshed cow
+    # export mesh
+    remesh.save(filename.replace('.obj', '.ply'))
 class mesh_processor():
     def __init__(self, root_dir):
         self.template_path = os.path.join(root_dir,'template')
@@ -84,3 +104,14 @@ class mesh_processor():
         # Perform ARAP deformation
         vn = arap.solve(bc, v)
         deformed_mesh = trimesh.Trimesh(vertices=vn, faces=f)
+    
+    
+if __name__ == "__main__":
+    root_dir = 'dataset/LeafData'
+    # read all obj file
+    for root, dirs, files in os.walk(root_dir):
+        for file in files:
+            if file.endswith('.obj'):
+                path = os.path.join(root, file)
+                repair_mesh(path)
+       

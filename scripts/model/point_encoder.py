@@ -54,7 +54,46 @@ class PCAutoEncoder(nn.Module):
 
 
         return latent_shape, latent_deform
+
+
+
+
+class Imgencoder(nn.Module):
+    def __init__(self, dino_model, new_layer_out_features):
+        super(Imgencoder, self).__init__()
+        self.dino_model = dino_model
+        # Remove the head of the DINO model if you only want the features
+        self.dino_model.head = nn.Identity()
+        
+        # Add your new layer
+        # Determine the correct input features by inspecting the original model's output features
+        self.new_layer = nn.Linear(in_features=384, out_features=512)
+
+        # Optionally, initialize the new layer's weights
+        nn.init.xavier_uniform_(self.new_layer.weight)
+        nn.init.zeros_(self.new_layer.bias)
+
+    def forward(self, x):
+        # Get the features from the pre-trained DINO model
+        features = self.dino_model(x)
+        
+        # Apply the new layer to these features
+        output = self.new_layer(features)
+        return output
+
+# Instantiate the custom model
+# Here, you need to specify the number of output features for your new layer
+new_layer_out_features = 512
+#custom_model = CustomDinoModel(encoder_2d, new_layer_out_features)
+
+# Now you can use custom_model as your new model with an additional layer
+
+# write a encoder with three conv layer and one fc layer for mask [128,128], output is [7]
+
+# class MaskEncoder(nn.module):
     
+
+
 if __name__ == "__main__":
     # test the autoencoder
     model = PCAutoEncoder(point_dim=3)
