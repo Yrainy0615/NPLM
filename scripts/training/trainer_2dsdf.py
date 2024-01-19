@@ -17,8 +17,8 @@ import warnings
 warnings.filterwarnings("ignore")
 import yaml
 from scripts.model.renderer import MeshRender
-from scripts.dataset.sdf_dataset import LeafShapeDataset, Leaf2DShapeDataset, LeafSDF2dFDataset
-from scripts.model.fields import SDFNetwork ,UDFNetwork
+from scripts.dataset.sdf_dataset import  LeafSDF2dFDataset
+from scripts.model.fields import  UDFNetwork
 from torch.utils.data import DataLoader
 import random
 from scripts.dataset.img_to_3dsdf import mesh_from_sdf
