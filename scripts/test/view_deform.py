@@ -48,9 +48,10 @@ if __name__ == "__main__":
                          d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
                          d_out=CFG['shape_decoder']['decoder_out_dim'],
                          n_layers=CFG['shape_decoder']['decoder_nlayers'],
-                         d_in_spatial=2)
+                         d_in_spatial=2,
+                         udf_type='sdf')
     
-    checkpoint_shape = torch.load('checkpoints/2dShape/exp-sdf2d__20.tar')
+    checkpoint_shape = torch.load('checkpoints/2dShape/exp-sdf2d__50.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape.eval()

@@ -119,7 +119,10 @@ class ShapeTrainer(object):
     def save_checkpoint(self, epoch,save_name):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
-        path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
+        if save_name == 'latest':
+            path = self.checkpoint_path + '/latest.tar'
+        else:
+            path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
@@ -181,6 +184,8 @@ class ShapeTrainer(object):
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0 and epoch >0:
                 self.save_checkpoint(epoch, save_name=CFG['training']['save_name'])
+            # save as latest
+            self.save_checkpoint(epoch, save_name='latest')
             
             if args.save_mesh:
                 if epoch % ckp_vis ==0:

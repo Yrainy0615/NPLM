@@ -280,7 +280,7 @@ def image_to_sdf(image):
 
 
 def mesh_from_sdf(logits, mini, maxi, resolution):
-    threshold = 0.01
+    threshold = 0.015
     vertices, triangles = mcubes.marching_cubes(-logits, threshold)
     # rescale to original scale
     step = (np.array(maxi) - np.array(mini)) / (resolution - 1)
@@ -290,7 +290,8 @@ def mesh_from_sdf(logits, mini, maxi, resolution):
     return trimesh.Trimesh(vertices, triangles)
 
 def sdf2d_3d(sdf_2d):
-    
+    # sdf_2d = cv2.resize(sdf_2d, (128,128),interpolation=cv2.INTER_AREA)
+
     # 定义z轴层数
     z_layers = sdf_2d.shape[0]
    
@@ -312,12 +313,14 @@ if __name__ == "__main__":
     all_masks.sort()
     for i in range(len(all_masks)):
         mask_path =all_masks[i]
-        save_name = mask_path.replace('.jpg', '_sdf.obj')
-        npy_name = mask_path.replace('.jpg', ' .npy')
+        save_name = mask_path.replace('.jpg', '_128.obj')
+        npy_name = mask_path.replace('.jpg', ' _128.npy')
+        # if os.path.exists(save_name):
+        #     continue
         mySDF2D = SDF2D(mask_path)
         sdf_image = mySDF2D.mask2sdf()
         sdf_2d = image_to_sdf(sdf_image)
-        sdf_2d = cv2.resize(sdf_2d, (256,256),interpolation=cv2.INTER_AREA)
+        sdf_2d = cv2.resize(sdf_2d, (128,128),interpolation=cv2.INTER_AREA)
         # sdf_2d = cv2.imread('/home/yang/projects/parametric-leaf/dataset/LeafData/Basil/healthy/mask/output/0_sdf.png')
         sdf_3d = sdf2d_3d(sdf_2d)
         # save sdf_ndarray to npy
@@ -326,7 +329,7 @@ if __name__ == "__main__":
         if save_mesh:
             mini = [-.95, -.95, -.95]
             maxi = [0.95, 0.95, 0.95]   
-            mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=256)
+            mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=128)
             mesh.export(f'{save_name}')
             print(f'save mesh {save_name}')
     

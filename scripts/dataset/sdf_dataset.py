@@ -117,7 +117,7 @@ class LeafSDF2dFDataset(Dataset):
     
     def __getitem__(self, index):
         trainfile = self.all_file[index]
-        grid_size = 256
+        grid_size = 128
         sdf_2d = np.load(trainfile, allow_pickle=True)
         sdf_gt = sdf_2d.reshape(-1)
         # random sampling from sdf_grid
