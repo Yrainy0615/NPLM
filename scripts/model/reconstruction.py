@@ -172,5 +172,5 @@ def sdf_from_latent(decoder, latent, grid_size):
     grid_points = torch.from_numpy(grid_points).float().to(latent.device)
     sdf_2d = decoder(grid_points, latent.unsqueeze(0).repeat(grid_points.shape[0], 1))
     sdf_2d = sdf_2d.reshape(grid_size, grid_size).cpu().detach().numpy()
-    sdf_3d  = sdf2d_3d(sdf_2d, viz_3d=False)
+    sdf_3d  = sdf2d_3d(sdf_2d)
     return sdf_3d   

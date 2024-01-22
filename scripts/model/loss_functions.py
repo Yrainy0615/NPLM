@@ -17,9 +17,6 @@ def compute_loss(batch, decoder, latent_idx,device):
     return loss_dict
 
 def actual_compute_loss(batch_cuda, decoder, glob_cond):
-    anchor_preds = None
-
-
     # prep
     sup_surface = batch_cuda['points'].clone().detach().requires_grad_() 
     sdf_gt = batch_cuda['sdf_gt'].clone().detach().requires_grad_()

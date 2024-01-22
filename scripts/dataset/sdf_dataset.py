@@ -117,10 +117,15 @@ class LeafSDF2dFDataset(Dataset):
     
     def __getitem__(self, index):
         trainfile = self.all_file[index]
+        grid_size = 256
         sdf_2d = np.load(trainfile, allow_pickle=True)
+        sdf_gt = sdf_2d.reshape(-1)
         # random sampling from sdf_grid
-        points = self.sample_points_from_grid(sdf_2d.shape[0], self.num_samples)
-        sdf_gt = sdf_2d[points[:,0], points[:,1]]
+        x = np.linspace(0, grid_size, grid_size)
+        y = np.linspace(0, grid_size, grid_size)
+        points = np.array(np.meshgrid(x, y)).T.reshape(-1, 2)
+        #points = self.sample_points_from_grid(sdf_2d.shape[0], self.num_samples)
+        # sdf_gt = sdf_2d[points[:,0], points[:,1]]
         return {'points': points,
                 'sdf_gt': sdf_gt,
                 'index': index,}

@@ -239,7 +239,7 @@ if __name__ == '__main__':
 
     decoder = decoder.to(device)
     trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device,args)
-    trainer.train(5001)
+    trainer.train(1001)
             
         
         

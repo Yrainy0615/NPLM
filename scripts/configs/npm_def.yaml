@@ -12,7 +12,7 @@ deform_decoder:
   use_mapping: False
 
 training:
-  shape_checkpoints: checkpoints/2dShape/exp-sdf2d__5000.tar
+  shape_checkpoints: checkpoints/2dShape/exp-sdf2d__1000.tar
   root_dir: dataset/ScanData/deformation
   save_name: exp-deform
   use_nce: False

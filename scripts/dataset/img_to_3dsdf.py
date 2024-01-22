@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import cv2
 import taichi as ti
 import pathlib
+import os
 import mcubes
 import trimesh
 
@@ -267,25 +268,20 @@ def pixel_to_distance(pixel_value, coefficient, offset):
     return (pixel_value - offset) / coefficient
 
 def image_to_sdf(image):
-    if len(image.shape) == 3 and image.shape[2] == 3:  # 如果image是一个三通道图像，只取一个通道
+    if len(image.shape) == 3 and image.shape[2] == 3:  
         image = image[:, :, 0]
-    sdf = np.zeros_like(image, dtype=np.float32)
-    for i in range(image.shape[0]):
-        for j in range(image.shape[1]):
-            sdf[i, j] = pixel_to_distance(image[i, j], 127.5, 127.5)
+    # sdf = np.zeros_like(image, dtype=np.float32)
+    # for i in range(image.shape[0]):
+    #     for j in range(image.shape[1]):
+    #         sdf[i, j] = pixel_to_distance(image[i, j], 127.5, 127.5)
+    coefficient, offset = 127.5, 127.5
+    sdf = (image.astype(np.float32) - offset) / coefficient
     return sdf
 
 
 def mesh_from_sdf(logits, mini, maxi, resolution):
-    # logits = np.reshape(logits, (resolution,) * 3)
-
-    # logits *= -1
-
-    # padding to ba able to retrieve object close to bounding box bondary
-    # logits = np.pad(logits, ((1, 1), (1, 1), (1, 1)), 'constant', constant_values=1000)
-    threshold = 0.0
+    threshold = 0.01
     vertices, triangles = mcubes.marching_cubes(-logits, threshold)
-
     # rescale to original scale
     step = (np.array(maxi) - np.array(mini)) / (resolution - 1)
     vertices = vertices * np.expand_dims(step, axis=0)
@@ -293,52 +289,44 @@ def mesh_from_sdf(logits, mini, maxi, resolution):
 
     return trimesh.Trimesh(vertices, triangles)
 
-
-def sdf2d_3d(sdf_image,viz_3d=False):
-
+def sdf2d_3d(sdf_2d):
+    
     # 定义z轴层数
-    z_layers = 32
-    sdf_2d = image_to_sdf(sdf_image)
-    sdf_2d = cv2.resize(sdf_2d, (32,32),interpolation=cv2.INTER_AREA)
+    z_layers = sdf_2d.shape[0]
+   
     # 创建3D Voxel Grid
     sdf_3d = np.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers))
 
     middle_layer = z_layers //2 # 选择z轴的中间层放置2D SDF
     sdf_3d[:, :, middle_layer] = sdf_2d  # 在中间层放置2D SDF
-    def normalize_array_to_neg_pos_half(arr):
-        min_vals = arr.min(axis=(0,1,2), keepdims=True)
-        max_vals = arr.max(axis=(0,1,2), keepdims=True)
-        
-        # 归一化到 [0, 1]
-        normalized_arr = (arr - min_vals) / (max_vals - min_vals)
-        
-        # 转换到 [-0.5, 0.5]
-        normalized_arr = normalized_arr - 0.5
-        
-        return normalized_arr
-    sdf_norm = normalize_array_to_neg_pos_half(sdf_3d)
-    # 简单地可视化一下这个3D Voxel Grid
-    if viz_3d:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-
-        x, y, z = np.where(sdf_3d < 0)  # 只展示SDF值小于0的voxels，您可以根据您的需求调整这一部分
-        ax.scatter(x, y, z)
-
-        plt.show()
     return sdf_3d
 
 if __name__ == "__main__":
-        # 假设您的2D SDF是一个圆形，中心点在(50, 50)，半径是40
-    img_name = r'/home/yang/projects/parametric-leaf/dataset/LeafData/Bael/healthy/Bael_healthy_0001_mask_aligned.JPG'
-
-    mySDF2D = SDF2D(img_name)
-    sdf_2d = mySDF2D.mask2sdf()
-    # sdf_2d = cv2.imread('/home/yang/projects/parametric-leaf/dataset/LeafData/Basil/healthy/mask/output/0_sdf.png')
-    sdf_3d = sdf2d_3d(sdf_2d, viz_3d=False)
-    
-    mini = [-.95, -.95, -.95]
-    maxi = [0.95, 0.95, 0.95]   
-    mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=256)
-    mesh.export('test_2.obj')
+    root = 'dataset/leaf_classification/images'    
+    save_mesh = True
+    all_masks = []
+    for dirpath , dirnames, filenames in os.walk(root):
+        for filename in filenames:
+            if filename.endswith('.jpg'):
+                all_masks.append(os.path.join(dirpath, filename))
+    all_masks.sort()
+    for i in range(len(all_masks)):
+        mask_path =all_masks[i]
+        save_name = mask_path.replace('.jpg', '_sdf.obj')
+        npy_name = mask_path.replace('.jpg', ' .npy')
+        mySDF2D = SDF2D(mask_path)
+        sdf_image = mySDF2D.mask2sdf()
+        sdf_2d = image_to_sdf(sdf_image)
+        sdf_2d = cv2.resize(sdf_2d, (256,256),interpolation=cv2.INTER_AREA)
+        # sdf_2d = cv2.imread('/home/yang/projects/parametric-leaf/dataset/LeafData/Basil/healthy/mask/output/0_sdf.png')
+        sdf_3d = sdf2d_3d(sdf_2d)
+        # save sdf_ndarray to npy
+        np.save(npy_name, sdf_2d)
+        print(f'save to {npy_name}')
+        if save_mesh:
+            mini = [-.95, -.95, -.95]
+            maxi = [0.95, 0.95, 0.95]   
+            mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=256)
+            mesh.export(f'{save_name}')
+            print(f'save mesh {save_name}')
     

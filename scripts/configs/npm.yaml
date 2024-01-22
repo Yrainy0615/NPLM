@@ -12,12 +12,12 @@ training:
   save_path: checkpoints/2dShape
   save_name: exp-sdf2d
   batch_size: 1
-  ckpt_interval: 1000
-  ckpt_vis: 100
+  ckpt_interval: 100
+  ckpt_vis: 20
   grad_clip: 0.1
   grad_clip_lat: 0.1
-  lr: 0.001
-  lr_lat: 0.001
+  lr: 0.0001
+  lr_lat: 0.0001
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.5
   lr_decay_interval: 5000
@@ -30,7 +30,7 @@ training:
   weight_decay: 0.02
   lambdas: 
     lat_reg: 0.002
-    surf_sdf: 2.0
+    surf_sdf: 1
     normals: 0.3
     space_sdf: 1
     near_udf: 1
