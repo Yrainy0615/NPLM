@@ -16,8 +16,8 @@ training:
   ckpt_vis: 5
   grad_clip: 0.1
   grad_clip_lat: 0.1
-  lr: 0.001
-  lr_lat: 0.001
+  lr: 0.0001
+  lr_lat: 0.0001
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.5
   lr_decay_interval: 30
