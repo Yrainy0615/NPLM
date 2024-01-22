@@ -107,7 +107,7 @@ class LeafSDF2dFDataset(Dataset):
         self.root_dir = root_dir
         for dirpath, dirnames, filenames in os.walk(root_dir):
             for filename in filenames:
-                if filename.endswith('.npy') and not 'sdf' in filename:
+                if filename.endswith('_128.npy') and not 'sdf' in filename:
                     self.all_file.append(os.path.join(dirpath, filename))
         self.all_file.sort()
         self.num_samples = num_samples
