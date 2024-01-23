@@ -1,10 +1,16 @@
-from .DataManager import LeafScanManager
 import point_cloud_utils as pcu
 import trimesh
 import PIL
 import os
 from matplotlib import pyplot as plt
 import numpy as np
+
+def load_mesh(path):
+    mesh = pcu.TriangleMesh()
+    v, f = pcu.load_mesh_vf(path)
+    mesh.vertex_data.positions = v
+    mesh.face_data.vertex_ids = f
+    return mesh
 
 def sample_surface(mesh, n_samps, viz=False):
     verts = mesh.vertex_data.positions
@@ -27,20 +33,17 @@ def sample_surface(mesh, n_samps, viz=False):
     return {'points':surf_points, 'normals':surf_normals}
     
 
-def run_species(manager):
-    all_neutral = manager.get_all_neutral()
+def run_species(all_mesh):
+    #all_neutral = manager.get_all_neutral()
     
-    for neutral in all_neutral:
+    for mesh_file in all_mesh:
         #neutral_id = manager.get_neutral_pose(neutral)
-        neutral_name = os.path.splitext(os.path.basename(neutral))[0]
-        neutral_name = neutral_name.split('_')[0]
-        # sample surface points from neural
-    
-        neutral_mesh = manager.load_mesh(neutral)
-        result = sample_surface(neutral_mesh, n_samps=250000)
-        out_dir = os.path.join(manager.get_neutral_path(),'train_file')
-        os.makedirs(out_dir, exist_ok=True)
-        np.save(os.path.join(out_dir,f"{neutral_name}_neutral.npy"), result)
+        save_name = mesh_file.replace('.obj', '_3d.npy')
+        mesh =load_mesh(mesh_file)
+        result = sample_surface(mesh, n_samps=250000)
+     
+        np.save(save_name, result)
+        print('{} is saved'.format(save_name))
         
 
 
@@ -61,8 +64,14 @@ def run_poses(manager):
 
 
 if __name__ == "__main__":
-    root_path = 'dataset/ScanData'
-    manager = LeafScanManager(root_path)
-    run_species(manager)
+    root = 'dataset/leaf_classification/images'    
+    save_mesh = True
+    all_mesh = []
+    for dirpath , dirnames, filenames in os.walk(root):
+        for filename in filenames:
+            if filename.endswith('.obj'):
+                all_mesh.append(os.path.join(dirpath, filename))
+    all_mesh.sort()
+    run_species(all_mesh)
     #run_poses(manager)
     

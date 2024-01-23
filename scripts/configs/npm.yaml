@@ -3,6 +3,7 @@ decoder:
   decoder_hidden_dim: 1024
   decoder_nlayers: 8
   decoder_out_dim: 1
+  use_mapping: True
 
 
 

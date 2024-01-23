@@ -8,6 +8,7 @@ import pathlib
 import os
 import mcubes
 import trimesh
+import torch
 
 ti.init(arch=ti.cpu)
 
@@ -279,7 +280,7 @@ def image_to_sdf(image):
     return sdf
 
 
-def mesh_from_sdf(logits, mini, maxi, resolution):
+def mesh_from_sdf(logits, resolution, mini=[-.95, -.95, -.95], maxi = [0.95, 0.95, 0.95] ):
     threshold = 0.015
     vertices, triangles = mcubes.marching_cubes(-logits, threshold)
     # rescale to original scale
@@ -296,11 +297,18 @@ def sdf2d_3d(sdf_2d):
     z_layers = sdf_2d.shape[0]
    
     # 创建3D Voxel Grid
-    sdf_3d = np.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers))
-
-    middle_layer = z_layers //2 # 选择z轴的中间层放置2D SDF
-    sdf_3d[:, :, middle_layer] = sdf_2d  # 在中间层放置2D SDF
-    return sdf_3d
+    # if sdf_2d is numpy
+    if isinstance(sdf_2d, np.ndarray):
+        sdf_3d = np.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers))
+        middle_layer = z_layers //2 
+        sdf_3d[:, :, middle_layer] = sdf_2d  
+        return sdf_3d
+    # if sdf_2d is tensor
+    elif isinstance(sdf_2d, torch.Tensor):
+        sdf_3d = torch.zeros((sdf_2d.shape[0], sdf_2d.shape[1], z_layers))
+        middle_layer = z_layers //2 
+        sdf_3d[:, :, middle_layer] = sdf_2d  
+        return sdf_3d
 
 if __name__ == "__main__":
     root = 'dataset/leaf_classification/images'    

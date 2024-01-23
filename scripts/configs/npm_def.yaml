@@ -3,10 +3,11 @@ shape_decoder:
   decoder_hidden_dim: 1024
   decoder_out_dim: 1
   decoder_nlayers: 8
+  use_mapping: True
 
 deform_decoder:
   decoder_hidden_dim: 1024
-  decoder_lat_dim: 200
+  decoder_lat_dim: 512
   decoder_nlayers: 8
   decoder_out_dim: 3
   use_mapping: False

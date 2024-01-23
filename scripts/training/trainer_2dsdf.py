@@ -59,23 +59,15 @@ class ShapeTrainer(object):
         if len(checkpoints)==0:
             print('No checkpoints found at {}'.format(self.checkpoint_path))
             return 0
-        checkpoints = [os.path.splitext(os.path.basename(path))[0][17:] for path in checkpoints]
-        checkpoints = np.array(checkpoints, dtype=int)
-        checkpoints = np.sort(checkpoints)
-        if 'ckpt' in self.cfg and self.cfg['ckpt'] is not None:
-            path = self.checkpoint_path + 'shape_epoch_{}.tar'.format(self.cfg['ckpt'])
-        else:
-            print('LOADING', checkpoints[-1])
-            path = self.checkpoint_path + 'shape_epoch_{}.tar'.format(checkpoints[-1])
+        path = os.path.join(self.checkpoint_path, 'latest.tar')
+
 
         print('Loaded checkpoint from: {}'.format(path))
         checkpoint = torch.load(path)
         self.decoder.load_state_dict(checkpoint['decoder_state_dict'])
-        self.optimizer_encoder.load_state_dict(checkpoint['optimizer_decoder_state_dict'])
-        self.optimizer_lat.load_state_dict(checkpoint['optimizer_latent_state_dict'])
-        #self.optimizer_lat_val.load_state_dict(checkpoint['optimizer_lat_val_state_dict'])
-        self.latent_codes.load_state_dict(checkpoint['latent_state_dict'])
-        #self.latent_codes_val.load_state_dict(checkpoint['latent_codes_val_state_dict'])
+        self.optimizer_decoder.load_state_dict(checkpoint['optimizer_decoder_state_dict'])
+        self.optimizer_latent.load_state_dict(checkpoint['optimizer_lat_state_dict'])
+        self.latent_idx.load_state_dict(checkpoint['latent_idx_state_dict'])
         epoch = checkpoint['epoch']
         for param_group in self.optimizer_decoder.param_groups:
             print('Setting LR to {}'.format(self.cfg['lr']))
@@ -121,6 +113,18 @@ class ShapeTrainer(object):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
             path = self.checkpoint_path + '/latest.tar'
+            torch.save({'epoch': epoch,
+                        'decoder_state_dict': self.decoder.state_dict(),
+                        'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
+                        'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
+                      #  'optimizer_lat_val_state_dict': self.optimizer_lat_val.state_dict(),
+                        'latent_idx_state_dict': self.latent_idx.state_dict(),
+                   #     'latent_spc_state_dict': self.latent_spc.state_dict(),
+                  
+                       # 'latent_codes_val_state_dict': self.latent_codes_val.state_dict()
+                       },
+                       path)
+       
         else:
             path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
         if not os.path.exists(path):
@@ -166,7 +170,8 @@ class ShapeTrainer(object):
 
     def train(self, epochs):
         loss = 0
-       # start = self.load_checkpoint()
+        if args.continue_train:
+            start = self.load_checkpoint()
         start =0
         ckp_interval =self.cfg['ckpt_interval']
         ckp_vis = self.cfg['ckpt_vis']
@@ -217,6 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=str, default='shape', help='output directory')
     parser.add_argument('--use_wandb', action='store_true', help='use wandb')
     parser.add_argument('--save_mesh', action='store_true', help='save mesh')
+    parser.add_argument('--continue_train', default=True, help='continue training from latest checkpoint')
     # setting
 
     args = parser.parse_args()
@@ -240,6 +246,7 @@ if __name__ == '__main__':
                          d_out=CFG['decoder']['decoder_out_dim'],
                          n_layers=CFG['decoder']['decoder_nlayers'],
                          d_in_spatial=2,
+                         use_mapping=CFG['decoder']['use_mapping'],
                          udf_type='sdf')
 
     decoder = decoder.to(device)

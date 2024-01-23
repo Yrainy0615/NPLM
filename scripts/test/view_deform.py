@@ -49,9 +49,10 @@ if __name__ == "__main__":
                          d_out=CFG['shape_decoder']['decoder_out_dim'],
                          n_layers=CFG['shape_decoder']['decoder_nlayers'],
                          d_in_spatial=2,
-                         udf_type='sdf')
+                         udf_type='sdf',
+                         use_mapping=CFG['shape_decoder']['use_mapping'])
     
-    checkpoint_shape = torch.load('checkpoints/2dShape/exp-sdf2d__50.tar')
+    checkpoint_shape = torch.load('checkpoints/2dShape/exp-sdf2d__300.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape.eval()
@@ -62,7 +63,7 @@ if __name__ == "__main__":
         os.makedirs(out_dir)    
     mini = [-.95, -.95, -.95]
     maxi = [0.95, 0.95, 0.95]
-    grid_points = create_grid_points_from_bounds(mini, maxi, 64)
+    grid_points = create_grid_points_from_bounds(mini, maxi, 128)
     grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
     grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
     # lat_def_all = checkpoint_deform['latent_deform_state_dict']['weight']
