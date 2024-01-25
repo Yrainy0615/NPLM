@@ -137,7 +137,7 @@ def get_logits_backward(decoder_shape,
 def deform_mesh(mesh,
                 deformer,
                 lat_rep,
-                anchors,
+                anchors=None,
                 lat_rep_shape=None):
     points_neutral = torch.from_numpy(np.array(mesh.vertices)).float().unsqueeze(0).to(lat_rep.device)
 
@@ -153,7 +153,7 @@ def deform_mesh(mesh,
             if anchors is not None:
                 d, _ = deformer(points, glob_cond, anchors.unsqueeze(1).repeat(1, points.shape[1], 1, 1))
             else:
-                d, _ = deformer(points, glob_cond, None)
+                d= deformer(points, glob_cond)
             delta_list.append(d.detach().clone())
 
             torch.cuda.empty_cache()

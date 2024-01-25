@@ -12,6 +12,7 @@ import io
 from PIL import Image
 from scripts.model.fields import UDFNetwork
 from scripts.dataset.img_to_3dsdf import sdf2d_3d, mesh_from_sdf
+import trimesh
 
 def save_mesh_image_with_camera(vertices, faces, filename="mesh.png"):
     fig = plt.figure()
@@ -28,9 +29,19 @@ def save_mesh_image_with_camera(vertices, faces, filename="mesh.png"):
     plt.savefig(filename, dpi=300)
     print(f'figure saved to {filename}')
     plt.close()
-    
+def normalize_verts(verts):
+      bbmin = verts.min(0)
+      bbmax = verts.max(0)
+      center = (bbmin + bbmax) * 0.5
+      scale = 2.0 * 0.8 / (bbmax - bbmin).max()
+      vertices = (verts - center) *scale
+      return vertices
 
-
+def mesh_to_canonical(vertices):
+    rotation_matrix = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    vertices = np.matmul(vertices, rotation_matrix)
+    normalize_vertices = normalize_verts(vertices)
+    return normalize_vertices
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Visualize latent space')
@@ -42,21 +53,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     CFG = yaml.safe_load(open(args.config, 'r'))
-
-    # 2d shape decoder
-    decoder_shape_2d = UDFNetwork(d_in=CFG['shape_decoder']['decoder_lat_dim'],
-                         d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
-                         d_out=CFG['shape_decoder']['decoder_out_dim'],
-                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
-                         d_in_spatial=2,
-                         udf_type='sdf',
-                         use_mapping=CFG['shape_decoder']['use_mapping'])
-    
-    checkpoint_shape = torch.load('checkpoints/2dShape/latest.tar')
-    lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
-    decoder_shape_2d.load_state_dict(checkpoint_shape['decoder_state_dict'])
-    decoder_shape_2d.eval()
-    decoder_shape_2d.to(device)
     
     
     # 3d shape decoder
@@ -67,12 +63,26 @@ if __name__ == "__main__":
                          d_in_spatial=3,
                          udf_type='sdf')
     
-    checkpoint_shape = torch.load('checkpoints/3dShape/latest.tar')
+    checkpoint_shape = torch.load('checkpoints/3dShape/exp-sdf3d__2500.tar')
     lat_idx_all_3d = checkpoint_shape['latent_idx_state_dict']['weight']
     decoder_shape_3d.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape_3d.eval()
     decoder_shape_3d.to(device)
-    
+
+    # deform decoder initialization
+    decoder_deform = UDFNetwork(d_in=CFG['deform_decoder']['decoder_lat_dim'],
+                         d_hidden=CFG['deform_decoder']['decoder_hidden_dim'],
+                         d_out=CFG['deform_decoder']['decoder_out_dim'],
+                         n_layers=CFG['deform_decoder']['decoder_nlayers'],
+                         udf_type='sdf',
+                         d_in_spatial=3,
+                         geometric_init=False,
+                         use_mapping=CFG['deform_decoder']['use_mapping'])
+    checkpoint_deform = torch.load('checkpoints/deform/exp-deform-dis__10000.tar')
+    lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
+    decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
+    decoder_deform.eval()
+    decoder_deform.to(device)
 
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
@@ -86,24 +96,12 @@ if __name__ == "__main__":
     # mesh = mesh_from_logits(logits, mini, maxi,256)
 
     
-    mode =   '3dshape'
-    if mode=='2dshape':
-        # random 50 index from latent space
-        ids = random.sample(range(0, lat_idx_all.shape[0]), 50)
-        for id in ids:
-            latent = lat_idx_all[id]
-            sdf_3d = sdf_from_latent(decoder=decoder_shape, latent=latent, grid_size=256)
-            mini = [-.95, -.95, -.95]
-            maxi = [0.95, 0.95, 0.95]   
-            mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=256)
-            save_file = out_dir + '/_{:04d}.obj'.format(id)
-            mesh.export(save_file)
-            print('{} saved'.format(save_file))
-            
+    mode =   'deform'
+
             
     if mode=='3dshape':
         # random 50 index from latent space
-        ids = random.sample(range(0, lat_idx_all.shape[0]), 50)
+        ids = random.sample(range(0, lat_idx_all_3d.shape[0]), 50)
         for id in ids:
             latent = lat_idx_all_3d[id]
             mesh = latent_to_mesh(decoder_shape_3d,latent , device)
@@ -113,39 +111,22 @@ if __name__ == "__main__":
             
                 
 
-    if mode == 'deform':
-        images = []
-        for i in range(7):
-            lat_idx = torch.concat([lat_idx_all[i], lat_spc_all[i]]).to(device)
-            logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=8000)
-            mesh = mesh_from_logits(logits, mini, maxi,256)
-            basename = out_dir + '/shape_{:04d}.ply'.format(i)
-            mesh.export(basename)
-            print(f'save mesh {basename}')
-  
-
-            if viz_deform:
-                for j in range(lat_def_all.shape[0]):
-                    deform_file =out_dir + '/shape_{:04d}_deform_{:04d}.ply'.format(i,j)
-                    if not os.path.exists(deform_file):
-                        lat_def = lat_def_all[j]
-                        lat_rep = torch.cat([lat_idx.unsqueeze(0), lat_def.unsqueeze(0)], dim=-1)
-                    #  logits = get_logits(decoder, lat_rep, grid_points=grid_points,nbatch_points=8000)
-                
-                        deform =  deform_mesh(mesh=mesh,deformer=decoder,lat_rep=lat_def,anchors=None,lat_rep_shape=lat_idx)
-
-                        deform.export(deform_file)
-                        img_name = out_dir + '/shape_{:04d}_deform_{:04d}.png'.format(i,j)
-                        save_mesh_image_with_camera(deform.vertices, deform.faces, filename=img_name)
-
-                        data_sample = {
-                            'latent_shape': lat_idx,
-                            'latent_def': lat_def,
-                            'mesh_deform':  deform_file,
-                            'img': img_name,
-                            
-                        }
-                        np.save(out_dir + '/shape_{:04d}_deform_{:04d}.npy'.format(i,j), data_sample)
+if mode == 'deform':
+    mesh_root = 'dataset/Mesh_colored'
+    all_mesh = os.listdir(mesh_root)
+    for mesh_file in all_mesh:
+            ids = random.sample(range(0, lat_deform_all.shape[0]), 20)
+            mesh = trimesh.load(os.path.join(mesh_root, mesh_file))
+            print('>>>>> Loading {} >>>>>'.format(mesh_file))
+            for id in ids:
+                latent = lat_deform_all[id]
+                mesh_deform = deform_mesh(mesh, decoder_deform, latent)
+                mesh_deform.visual.vertex_colors = mesh.visual.vertex_colors
+                save_name = mesh_file.split('.')[0] + '_d{}.obj'.format(id)
+                save_file = os.path.join('dataset/Mesh_colored/deformed', save_name)
+                mesh_deform.export(save_file, include_color=True)
+                print('{} saved'.format(save_file))
+            
 
 
                 
