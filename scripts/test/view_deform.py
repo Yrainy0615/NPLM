@@ -2,7 +2,7 @@ import argparse
 import yaml
 import sys
 sys.path.append('NPLM')
-from scripts.model.reconstruction import deform_mesh, get_logits, mesh_from_logits,create_grid_points_from_bounds, sdf_from_latent
+from scripts.model.reconstruction import deform_mesh, get_logits, mesh_from_logits,create_grid_points_from_bounds, sdf_from_latent, latent_to_mesh
 import torch
 import os
 from matplotlib import pyplot as plt
@@ -43,8 +43,8 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     CFG = yaml.safe_load(open(args.config, 'r'))
 
-
-    decoder_shape = UDFNetwork(d_in=CFG['shape_decoder']['decoder_lat_dim'],
+    # 2d shape decoder
+    decoder_shape_2d = UDFNetwork(d_in=CFG['shape_decoder']['decoder_lat_dim'],
                          d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
                          d_out=CFG['shape_decoder']['decoder_out_dim'],
                          n_layers=CFG['shape_decoder']['decoder_nlayers'],
@@ -52,11 +52,26 @@ if __name__ == "__main__":
                          udf_type='sdf',
                          use_mapping=CFG['shape_decoder']['use_mapping'])
     
-    checkpoint_shape = torch.load('checkpoints/2dShape/exp-sdf2d__300.tar')
+    checkpoint_shape = torch.load('checkpoints/2dShape/latest.tar')
     lat_idx_all = checkpoint_shape['latent_idx_state_dict']['weight']
-    decoder_shape.load_state_dict(checkpoint_shape['decoder_state_dict'])
-    decoder_shape.eval()
-    decoder_shape.to(device)
+    decoder_shape_2d.load_state_dict(checkpoint_shape['decoder_state_dict'])
+    decoder_shape_2d.eval()
+    decoder_shape_2d.to(device)
+    
+    
+    # 3d shape decoder
+    decoder_shape_3d = UDFNetwork(d_in=CFG['shape_decoder']['decoder_lat_dim'],
+                         d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
+                         d_out=CFG['shape_decoder']['decoder_out_dim'],
+                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
+                         d_in_spatial=3,
+                         udf_type='sdf')
+    
+    checkpoint_shape = torch.load('checkpoints/3dShape/latest.tar')
+    lat_idx_all_3d = checkpoint_shape['latent_idx_state_dict']['weight']
+    decoder_shape_3d.load_state_dict(checkpoint_shape['decoder_state_dict'])
+    decoder_shape_3d.eval()
+    decoder_shape_3d.to(device)
     
 
     if not os.path.exists(out_dir):
@@ -71,8 +86,8 @@ if __name__ == "__main__":
     # mesh = mesh_from_logits(logits, mini, maxi,256)
 
     
-    mode =   'shape'
-    if mode=='shape':
+    mode =   '3dshape'
+    if mode=='2dshape':
         # random 50 index from latent space
         ids = random.sample(range(0, lat_idx_all.shape[0]), 50)
         for id in ids:
@@ -85,8 +100,18 @@ if __name__ == "__main__":
             mesh.export(save_file)
             print('{} saved'.format(save_file))
             
+            
+    if mode=='3dshape':
+        # random 50 index from latent space
+        ids = random.sample(range(0, lat_idx_all.shape[0]), 50)
+        for id in ids:
+            latent = lat_idx_all_3d[id]
+            mesh = latent_to_mesh(decoder_shape_3d,latent , device)
+            save_file = out_dir + '/_{:04d}.obj'.format(id)
+            mesh.export(save_file)
+            print('{} saved'.format(save_file))
+            
                 
-        pass
 
     if mode == 'deform':
         images = []

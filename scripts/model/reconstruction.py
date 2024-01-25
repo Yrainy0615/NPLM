@@ -29,14 +29,14 @@ def save_mesh_image_with_camera(vertices, faces):
     
     plt.close()
     return img
-def latent_to_mesh(decoder, latent_idx,device):
+def latent_to_mesh(decoder, latent_idx,device, resolution=128):
     mini = [-.95, -.95, -.95]
     maxi = [0.95, 0.95, 0.95]
-    grid_points = create_grid_points_from_bounds(mini, maxi, 256)
+    grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
     grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
     grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
     logits = get_logits(decoder, latent_idx, grid_points=grid_points,nbatch_points=2000)
-    mesh = mesh_from_logits(logits, mini, maxi,256)
+    mesh = mesh_from_logits(logits, mini, maxi,resolution)
     # if len(mesh.vertices)==0:
     #     return None, None
     # else:
@@ -172,5 +172,7 @@ def sdf_from_latent(decoder, latent, grid_size):
     grid_points = torch.from_numpy(grid_points).float().to(latent.device)
     sdf_2d = decoder(grid_points, latent.unsqueeze(0).repeat(grid_points.shape[0], 1))
     sdf_2d = sdf_2d.reshape(grid_size, grid_size).cpu().detach().numpy()
+    # regularize sdf to (-1,1)
+    sdf_2d = sdf_2d / np.max(np.abs(sdf_2d))
     sdf_3d  = sdf2d_3d(sdf_2d)
     return sdf_3d   

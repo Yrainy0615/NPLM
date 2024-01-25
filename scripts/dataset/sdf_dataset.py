@@ -4,9 +4,10 @@ from .DataManager import LeafScanManager, LeafImageManger
 from typing import Literal
 import os
 import yaml
-from .sample_surface import sample_surface
 import json
 import cv2
+import igl
+import trimesh
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)
@@ -128,7 +129,7 @@ class LeafSDF2dFDataset(Dataset):
         # sdf_gt = sdf_2d[points[:,0], points[:,1]]
         return {'points': points,
                 'sdf_gt': sdf_gt,
-                'index': index,}
+                'idx': index,}
         
     def sample_points_from_grid(self, n, x):
         if x > n * n:
@@ -138,7 +139,46 @@ class LeafSDF2dFDataset(Dataset):
         
         return np.array(points)[sampled_points]
     
-
+class LeafSDF3dDataset(Dataset):
+    def __init__(self, root_dir, num_samples, sigma_near, num_samples_space) -> None:
+        super().__init__()
+        self.all_file = []
+        self.root_dir = root_dir
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            for filename in filenames:
+                if filename.endswith('_3d.npy'):
+                    self.all_file.append(os.path.join(dirpath, filename))
+        self.all_file.sort()
+        self.num_samples = num_samples
+        self.sigma_near = sigma_near
+        self.num_samples_space = num_samples_space
+        
+    def __len__(self):
+        return len(self.all_file)
+    
+    def __getitem__(self, index):
+        trainfile = self.all_file[index]
+        data = np.load(trainfile, allow_pickle=True)
+        points = data.item()['points']
+        normals = data.item()['normals']
+        mesh = trimesh.load(trainfile.replace('_3d.npy', '.obj'))
+        sup_idx = np.random.randint(0, points.shape[0], self.num_samples)
+        sup_points = points[sup_idx,:]
+        sup_normals = normals[sup_idx,:]
+        
+        # near surface & random in space
+        sup_grad_far = uniform_ball(self.num_samples_space, rad=0.5)
+        # sup_grad_far_sdf = igl.signed_distance(sup_grad_far,mesh.vertices, mesh.faces)[0]
+        sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
+        # sup_grad_near_sdf = igl.signed_distance(sup_grad_near,mesh.vertices, mesh.faces)[0]
+        ret_dict = {'points': sup_points,
+                    'normals': sup_normals,
+                    'sup_grad_far': sup_grad_far,
+                    'sup_grad_near': sup_grad_near,
+                    # 'sup_grad_near_sdf': sup_grad_near_sdf,
+                    # 'sup_grad_far_sdf': sup_grad_far_sdf,
+                    'idx': np.array([index])}
+        return ret_dict
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))

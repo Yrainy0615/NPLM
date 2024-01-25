@@ -16,7 +16,8 @@ from scripts.model.renderer import MeshRender
 import cv2
 from matplotlib import pyplot as plt
 from scripts.dataset.img_to_3dsdf import  mesh_from_sdf , sdf2d_3d
-from scripts.model.reconstruction import sdf_from_latent
+from scripts.model.reconstruction import sdf_from_latent, latent_to_mesh, deform_mesh
+import imageio
 
 def normalize_verts(verts):
       bbmin = verts.min(0)
@@ -42,45 +43,36 @@ def fit_point_cloud( maskfile,point_cloud,device,
     mask_target = torch.tensor(mask/255, dtype=torch.float32).unsqueeze(0).cuda()
     point_cloud_tensor = torch.tensor(point_cloud, dtype=torch.float32).unsqueeze(0).cuda().requires_grad_(True)
     #latent_init = encoder(mask_target.permute(0,3,1,2))
-    latent_shape_init = latent_shape[100]
+    latent_shape_init = latent_shape[353]
     latent_shape_init.requires_grad_(True)
     
-    latent_deform_init = latent_deform[20]
+    latent_deform_init = latent_deform[0]
     latent_deform_init.requires_grad_(True)
-    sdf_canonical = sdf_from_latent(decoder_shape, latent_shape_init, 256)
-    initial_mesh = mesh_from_sdf(sdf_canonical, resolution=256)
+    # sdf_canonical = sdf_from_latent(decoder_shape, latent_shape_init, 256)
+    # initial_mesh = mesh_from_sdf(sdf_canonical, resolution=256)
+    #initial_mesh = latent_to_mesh(decoder_shape, latent_shape_init, 256)
+    
 
 
-    optimizer = torch.optim.Adam([latent_shape_init,latent_deform_init], lr=1e-3)
-    for i in range(400):
+    optimizer = torch.optim.Adam([latent_shape_init], lr=1e-3)
+    masks = []
+    for i in range(1):
         optimizer.zero_grad()
-        #lat_rep = torch.matmul(latent_source,latent_copy)
-        sdf_canonical = sdf_from_latent(decoder_shape, latent_shape_init, 256)
-        mesh = mesh_from_sdf(sdf_canonical, resolution=256)
+        mesh = latent_to_mesh(decoder_shape, latent_shape_init, device)
         delta_verts = decoder_deform(torch.from_numpy(mesh.vertices).float().to(device), latent_deform_init.unsqueeze(0).repeat(mesh.vertices.shape[0], 1))
-        delta_verts = delta_verts.squeeze().detach().cpu().numpy()
-        verts = mesh.vertices# + delta_verts
+        #delta_verts = delta_verts.squeeze().detach().cpu().numpy()
+        verts = mesh.vertices
         faces = mesh.faces
-        #verts = normalize_verts(verts)
-        # now assemble loss function
         xyz_upstream = torch.tensor(verts.astype(float), requires_grad = True, dtype=torch.float32, device=torch.device('cuda:0'))
         faces_upstream = torch.tensor(faces.astype(float), requires_grad = False, dtype=torch.float32, device=torch.device('cuda:0'))
-
         """
         Differentiable Rendering back-propagating to mesh vertices
         """
-
-        textures_dr = 0.7*torch.ones(faces_upstream.shape[0], 1, 1, 1, 3, dtype=torch.float32).cuda()
-        # images_out, depth_out, silhouette_out = renderer(xyz_upstream.unsqueeze(0), faces_upstream.unsqueeze(0), textures_dr.unsqueeze(0))
-        #mask = renderer.get_mask(Meshes(verts=[xyz_upstream.squeeze()], faces=[faces_upstream.squeeze()]))
-        # require grads
-        #mask_tensor = mask[:,:,:,3]
-        #mask_out = torch.tensor(mask_out).float().to(device).requires_grad_(True)
-        # loss_sillu = torch.mean((mask_tensor-mask_target[:,:,:,2])**2)
+        mask_img = renderer.get_mask(Meshes(verts=[xyz_upstream.squeeze()], faces=[faces_upstream.squeeze()]))        
         loss_chamfer = chamfer_distance(xyz_upstream.unsqueeze(0), point_cloud_tensor)
         loss =loss_chamfer[0]#+torch.norm(latent_source, dim=-1)**2 # +loss_chamfer[0]
         # print losses
-        print('loss_chamfer: {}'.format(loss_chamfer[0]))
+        print('shape iter:{}  loss_chamfer: {}'.format(i,loss_chamfer[0]))
         loss.backward()
         # now store upstream gradients
         dL_dx_i = xyz_upstream.grad
@@ -88,13 +80,8 @@ def fit_point_cloud( maskfile,point_cloud,device,
         # use vertices to compute full backward pass
         optimizer.zero_grad()
         xyz = torch.tensor(verts, requires_grad = True, dtype=torch.float32, device=torch.device('cuda:0'))
-        # latent_expand = latent_shape_init.expand(xyz.shape[0], -1)
-
         #first compute normals 
-        pred_sdf = decoder_shape(xyz[:,:2]*256, latent_shape_init.unsqueeze(0).repeat(xyz.shape[0], 1))
-        # sdf_2d = sdf_2d.reshape(256, 256)
-        # pred_sdf  = sdf2d_3d(sdf_2d)
-
+        pred_sdf = decoder_shape(xyz, latent_shape_init.unsqueeze(0).repeat(xyz.shape[0], 1))
         loss_normals = torch.sum(pred_sdf)
         loss_normals.backward(retain_graph = True)
         # normalization to take into account for the fact sdf is not perfect...
@@ -107,9 +94,32 @@ def fit_point_cloud( maskfile,point_cloud,device,
         loss_backward.backward()
         # and update params
         optimizer.step()
-        mesh_refined = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-        mesh_refined.export(f'refined_{i}.ply')
-    return initial_mesh
+        masks.append(mask_img)
+    deform_img = []
+    optimizer_deform = torch.optim.Adam([latent_deform_init], lr=1e-3)
+    canonical_mesh = latent_to_mesh(decoder_shape, latent_shape_init, device, resolution=256)
+    loss_min =100
+    for j in range(300):
+        optimizer.zero_grad()
+        
+        verts_canonical = torch.tensor(canonical_mesh.vertices.astype(float), requires_grad = False, dtype=torch.float32, device=torch.device('cuda:0'))
+        faces_canonical = torch.tensor(canonical_mesh.faces.astype(float), requires_grad = False, dtype=torch.float32, device=torch.device('cuda:0'))
+        delta_verts = decoder_deform(verts_canonical, latent_deform_init.unsqueeze(0).repeat(verts_canonical.shape[0], 1))
+        new_verts  = verts_canonical + delta_verts
+        mask_deform = renderer.get_mask(Meshes(verts=[new_verts.squeeze()], faces=[faces_canonical.squeeze()]))        
+
+        loss_chamfer = chamfer_distance(new_verts.unsqueeze(0), point_cloud_tensor)
+        loss = loss_chamfer[0]
+        if loss_min>loss:
+            loss_min = loss
+            best_verts = new_verts
+        print('deform iter:{}  loss_chamfer: {}'.format(j,loss_chamfer[0]))
+        loss.backward()
+        optimizer_deform.step()
+        deform_img.append(mask_deform)
+    deformed_mesh = trimesh.Trimesh(best_verts.detach().cpu().squeeze().numpy(), canonical_mesh.faces, process=False)
+
+    return masks, deform_img, canonical_mesh, deformed_mesh
 
 if __name__ == "__main__":
     # set device
@@ -124,11 +134,9 @@ if __name__ == "__main__":
                         d_out=CFG['shape_decoder']['decoder_out_dim'],
                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
                         udf_type='sdf',
-                        d_in_spatial=2,
-                        use_mapping=CFG['shape_decoder']['use_mapping'])
-    checkpoint = torch.load('checkpoints/2dShape/exp-sdf2d__300.tar')
+                        d_in_spatial=3,)
+    checkpoint = torch.load('checkpoints/3dShape/latest.tar')
     lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
-    #lat_idx= lat_idx_all[30] 
     decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
     decoder_shape.eval()
     decoder_shape.to(device)
@@ -142,7 +150,7 @@ if __name__ == "__main__":
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/exp-deform-dis__10000.tar')
+    checkpoint_deform = torch.load('checkpoints/deform/exp-deform-dis__10000.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -158,10 +166,20 @@ if __name__ == "__main__":
     # encoder.eval()
     # test single leaf
     mask_file = 'dataset/leaf_classification/images/Acer_Capillipes/201.jpg'
-    target_mesh = 'dataset/leaf_classification/images/Acer_Capillipes/201_128.obj'
+    #target_mesh = 'dataset/leaf_classification/images/Acer_Capillipes/201_128.obj'
+    # target_mesh = 'dataset/leaf_classification/images/Acer_Opalus/1_128.obj'
+    target_mesh = 'dataset/ScanData/deformation/maple1_d4_aligned.obj' 
     mesh = trimesh.load(target_mesh)
+    # resize mesh vertices to [-1,1]
+    mesh.vertices = normalize_verts(mesh.vertices)
     pds = mesh.sample(1000)
-    mesh = fit_point_cloud(maskfile=mask_file,point_cloud=pds, device=device,
+    masks, deforms, canonical_mesh, deformed_mesh = fit_point_cloud(maskfile=mask_file,point_cloud=pds, device=device,
                            decoder_shape=decoder_shape , latent_shape=lat_idx_all,
                            decoder_deform=decoder_deform, latent_deform=lat_deform_all)
+    imageio.mimsave('results/maple.gif', masks, fps=2)
+    imageio.mimsave('results/maple_deform.gif', deforms, fps=2)
+    canonical_mesh.export('results/maple_canonical.obj')
+    deformed_mesh.export('results/maple_deformed.obj')
+    
+    print('Done')
     

@@ -4,7 +4,7 @@ import math
 from glob import glob
 import sys
 sys.path.append('NPLM')
-from scripts.model.loss_functions import compute_loss
+from scripts.model.loss_functions import compute_loss, compute_sdf_3d_loss
 import os
 import numpy as np
 import wandb
@@ -17,12 +17,12 @@ import warnings
 warnings.filterwarnings("ignore")
 import yaml
 from scripts.model.renderer import MeshRender
-from scripts.dataset.sdf_dataset import  LeafSDF2dFDataset
+from scripts.dataset.sdf_dataset import  LeafSDF3dDataset
 from scripts.model.fields import  UDFNetwork
 from torch.utils.data import DataLoader
 import random
 from scripts.dataset.img_to_3dsdf import mesh_from_sdf
-from scripts.model.reconstruction import sdf_from_latent , save_mesh_image_with_camera
+from scripts.model.reconstruction import latent_to_mesh , save_mesh_image_with_camera
 from pytorch3d.structures import Meshes,  Pointclouds, Volumes
 
 class ShapeTrainer(object):
@@ -144,7 +144,7 @@ class ShapeTrainer(object):
         self.decoder.train()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
-        loss_dict = compute_loss(batch, self.decoder, self.latent_idx, self.device)
+        loss_dict = compute_sdf_3d_loss(batch, self.decoder, self.latent_idx, self.device)
         loss_total = 0
         for key in loss_dict.keys():
             loss_total += self.cfg['lambdas'][key] * loss_dict[key]
@@ -194,17 +194,8 @@ class ShapeTrainer(object):
             
             if args.save_mesh:
                 if epoch % ckp_vis ==0:
-                    #lat = torch.concat([self.latent_idx.weight[0], self.latent_spc.weight[0]]).to(self.device)
                     lat = self.latent_idx.weight[random.randint(0,len(trainset)-1)].to(self.device)
-                # _, _ ,mesh_udf = get_mesh_udf_fast(decoder, lat.unsqueeze(0),gradient=False)
-                    #print(mesh_udf)
-                    sdf_3d = sdf_from_latent(self.decoder,lat, 256)
-                    mini = [-.95, -.95, -.95]
-                    maxi = [0.95, 0.95, 0.95]   
-                    mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=256)
-                    # mesh_pytorch = Meshes(verts=torch.from_numpy(mesh.vertices).unsqueeze(0).float(), faces=torch.from_numpy(mesh.faces).unsqueeze(0), textures=None)
-                    # fragments = self.renderer.rasterize(mesh_pytorch.to(self.device))
-                    # img = fragments.pix_to_face.squeeze().cpu().numpy()
+                    mesh = latent_to_mesh(self.decoder,lat , device=self.device)
                     mesh.export('epoch_{:04d}.ply'.format(epoch))
 
             n_train = len(self.trainloader)
@@ -230,28 +221,30 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-    config = 'NPLM/scripts/configs/npm.yaml'
+    config = 'NPLM/scripts/configs/npm_3d.yaml'
     CFG = yaml.safe_load(open(config, 'r'))
     
     if args.use_wandb:
         wandb.init(project='NPLM', name =args.wandb)
         wandb.config.update(CFG)
     #dataset
-    trainset = LeafSDF2dFDataset(root_dir=CFG['training']['root_dir'],
-                                 num_samples=CFG['training']['npoints_decoder'],)
+    trainset = LeafSDF3dDataset(root_dir=CFG['training']['root_dir'],
+                                 num_samples=CFG['training']['npoints_decoder'],
+                                 sigma_near=CFG['training']['sigma_near'],
+                                 num_samples_space=CFG['training']['npoints_decoder_space'])
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
 
     decoder = UDFNetwork(d_in=CFG['decoder']['decoder_lat_dim'],
                          d_hidden=CFG['decoder']['decoder_hidden_dim'],
                          d_out=CFG['decoder']['decoder_out_dim'],
                          n_layers=CFG['decoder']['decoder_nlayers'],
-                         d_in_spatial=2,
+                         d_in_spatial=3,
                          use_mapping=CFG['decoder']['use_mapping'],
                          udf_type='sdf')
 
     decoder = decoder.to(device)
     trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device,args)
-    trainer.train(5001)
+    trainer.train(5000)
             
         
         

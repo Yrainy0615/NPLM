@@ -29,7 +29,7 @@ from pytorch3d.ops.marching_cubes import marching_cubes_naive
 
 class MeshRender():
     def __init__(self,device):
-        R, t = look_at_view_transform(0, 90, 0)
+        R, t = look_at_view_transform(2, 0, 0)
         self.R = torch.nn.Parameter(R)
         self.t = torch.nn.Parameter(t)
         self.device = device
@@ -51,7 +51,7 @@ class MeshRender():
             device=self.device,
             cameras=self.cameras,
             lights=lights,
-            blend_params=blend_params
+         #   blend_params=blend_params
         )
     )
         
@@ -78,7 +78,7 @@ class MeshRender():
     def get_mask(self, mesh):
         fragments = self.renderer.rasterizer(mesh)
         mask = fragments.zbuf > 0
-        mask = mask.detach().cpu().float().squeeze(0).numpy()
+        mask = mask.detach().cpu().float().squeeze().numpy()
         return mask
     
     def get_depth(self, mesh):
