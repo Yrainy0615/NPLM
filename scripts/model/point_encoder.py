@@ -58,13 +58,12 @@ class PCAutoEncoder(nn.Module):
 class CameraNet(nn.Module):
     def __init__(self, feature_dim, hidden_dim):
         super(CameraNet, self).__init__()
-        # 定义MLP结构
         self.fc = nn.Sequential(
             nn.Linear(feature_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 2)  # 输出有两个值，分别对应方位角和仰角
+            nn.Linear(hidden_dim, 2) 
         )
 
     def forward(self, x):

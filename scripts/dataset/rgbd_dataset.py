@@ -12,9 +12,37 @@ import warnings
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from torch.utils.data.dataloader import default_collate
-
+import re
+from collections import defaultdict
+from PIL import Image
+from transformers import ViTImageProcessor
 
 warnings.filterwarnings('ignore', message='No mtl file provided')
+
+def extract_info_from_masks(masks):
+    plant_type_indices = defaultdict(int)
+    for i, filename in enumerate(masks):
+        plant_type = filename.split('_')[0]  
+        if plant_type not in plant_type_indices:
+            plant_type_indices[plant_type] = i
+    return plant_type_indices
+
+def extract_shape_index(canonical_name, plant_type_indices):
+    pattern = re.compile(r'([A-Za-z]+)[_]?(\d+)')
+    extracted_info = {}
+    if '_d' in canonical_name:
+        canonical_name = canonical_name.replace('_d','')
+        match = pattern.search(canonical_name)
+        plant_type = match.group(1)
+        number = match.group(2)
+        plant_type_index = plant_type_indices[plant_type] + 59 + int(number)
+        
+    else: 
+        match = pattern.search(canonical_name)
+        plant_type = match.group(1)
+        number = match.group(2)
+        plant_type_index = plant_type_indices[plant_type] + int(number)
+    return plant_type_index, plant_type
 
 def custom_collate_fn(batch):
     batch_points = [item['points'] for item in batch]
@@ -23,10 +51,18 @@ def custom_collate_fn(batch):
     batch_deformed_verts = [item['deformed_verts'] for item in batch]
     batch_camera_pose = [item['camera_pose'] for item in batch]
     batch_deform_index = [item['deform_index'] for item in batch]
+    batch_shape_index = [item['shape_index'] for item in batch]
+    batch_inputs = [item['inputs'] for item in batch]
+    batch_canonical_rgb = [item['canonical_rgb'] for item in batch]
+    batch_canonical_mask = [item['canonical_mask'] for item in batch]
     collated_data = {
         'rgb': default_collate(batch_rgb),
         'camera_pose': default_collate(batch_camera_pose),
         'deform_index': default_collate(batch_deform_index),
+        'shape_index': default_collate(batch_shape_index),
+        'inputs': default_collate(batch_inputs),
+        'canonical_rgb': default_collate(batch_canonical_rgb),
+        'canonical_mask': default_collate(batch_canonical_mask)
     }
     collated_data['points'] = batch_points
     collated_data['canonical_verts'] = batch_canonical_verts
@@ -97,7 +133,13 @@ class Point_cloud_dataset(Dataset):
                 if 'depth' in file and file.endswith('.png'):
                     full_path = os.path.join(dirpath, file)
                     self.all_depth.append(full_path)
-
+        self.all_mask = []
+        for dirpath, dirnames, filenames in os.walk('dataset/LeafData'):
+            for file in filenames:
+                if 'mask' in file and file.endswith('.JPG'):
+                    self.all_mask.append(file)
+        self.all_mask.sort()
+        self.plant_type_indices  = extract_info_from_masks(self.all_mask)
 
     def __len__(self):
         return len(self.all_depth)
@@ -112,6 +154,19 @@ class Point_cloud_dataset(Dataset):
         # name 
         last_index = deformed_name.rfind('_')
         canonical_name = deformed_name[:last_index]
+        # get shape index from self.all_mask
+        shape_index, plant = extract_shape_index(canonical_name, self.plant_type_indices)
+        filename = self.all_mask[shape_index]
+        if 'healthy' in filename:
+            canonical_mask = os.path.join('dataset/LeafData',plant,'healthy', filename)
+        else:
+            canonical_mask = os.path.join('dataset/LeafData',plant,'diseased', filename)
+        canonical_rgb_file = canonical_mask.replace('_mask', '')
+        canonical_rgb = cv2.imread(canonical_rgb_file)
+        canonical_rgb = cv2.cvtColor(canonical_rgb, cv2.COLOR_BGR2RGB)
+        canonical_rgb = cv2.resize(canonical_rgb, (256, 256))
+        canonical_mask_img = cv2.imread(canonical_mask)
+        canonical_mask_img = cv2.resize(canonical_mask_img, (256, 256))
         canonical_mesh =load_obj(os.path.join(self.root_dir, canonical_name+'.obj'))
         canonical_verts = canonical_mesh[0]
         camera_file = os.path.join(self.root_dir,'views',deformed_name,'camera.json')
@@ -121,18 +176,26 @@ class Point_cloud_dataset(Dataset):
         point_savename  = depth_file.replace('_depth.png',' _points.npy')
         # np.save(point_savename, point_cloud)
         # print('{} is saved'.format(point_savename))
-        rgb = cv2.imread(rgb_file)
-        rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
-        rgb = cv2.resize(rgb, (512, 512))
+        
+        # load rgb
+        processor =  ViTImageProcessor.from_pretrained('facebook/dino-vitb16')
+        rgb = Image.open(rgb_file).convert("RGB")
+        
+        inputs = processor(images=rgb, return_tensors="pt")
+
         azimuth = torch.tensor(camera_info['azimuth'][int(render_index)]).rad2deg()
         polar_angle = torch.tensor(camera_info['polar_angle'][int(render_index)]).rad2deg()
         data = {
            'points': point_cloud,
-            'rgb': rgb,
+            'rgb': np.array(rgb.resize((256,256))),
             'deformed_verts': deformed_verts,
             'canonical_verts': canonical_verts,
-           'camera_pose': (azimuth, polar_angle),
-           'deform_index': deforn_index
+           'camera_pose': np.array([azimuth, polar_angle]),
+           'deform_index': deforn_index,
+           'shape_index': shape_index,
+           'inputs':inputs,
+           'canonical_rgb': canonical_rgb,
+           'canonical_mask': canonical_mask_img
         }
         return data
     

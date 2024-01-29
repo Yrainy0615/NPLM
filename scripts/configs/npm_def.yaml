@@ -16,9 +16,10 @@ training:
   shape_checkpoints: checkpoints/2dShape/exp-sdf2d__1000.tar
   root_dir: dataset/ScanData/deformation
   save_name: exp-deform
+  train_color: -1
   use_nce: False
   use_distance: True
-  batch_size: 16
+  batch_size: 1
   ckpt_interval: 5000
   ckpt_vis: 1000
   grad_clip: 0.025

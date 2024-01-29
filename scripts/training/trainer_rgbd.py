@@ -12,12 +12,16 @@ import yaml
 import glob
 import wandb
 from scripts.model.loss_functions import rgbd_loss
+from transformers import ViTModel
+from scripts.model.generator import Generator
+from scripts.model.renderer import MeshRender
 
 class PointsTrainer(object):
     def __init__(self, encoder_3d, encoder_2d, 
                  cameranet, trainloader, 
                  latent_shape, latent_deform,
                  decoder_shape, decoder_deform,
+                 generator,
                  cfg, device):
         self.encoder_3d = encoder_3d
         self.encoder_2d = encoder_2d
@@ -26,6 +30,8 @@ class PointsTrainer(object):
         self.decoder_shape = decoder_shape
         self.decoder_deform = decoder_deform
         self.device = device
+        self.generator = generator
+        self.renderer = MeshRender(device=device)
         self.cfg = cfg['training']
         self.latent_shape = latent_shape
         self.latent_deform = latent_deform
@@ -124,7 +130,7 @@ class PointsTrainer(object):
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict = self.train_step(batch)
+                loss_dict = self.train_step(batch, epoch,args)
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
                 if args.use_wandb:
                     wandb.log(loss_values)
@@ -142,13 +148,15 @@ class PointsTrainer(object):
                 print_str += " " + k + " {:06.4f}".format(sum_loss_dict[k])
             print(print_str)
 
-    def train_step(self, batch):
+    def train_step(self, batch, epoch, args):
         self.optimizer_encoder3d.zero_grad()
         self.optimizer_cameranet.zero_grad()
         loss_dict = rgbd_loss(batch, cameranet=self.cameranet, encoder_3d=self.encoder_3d,
                                  decoder_deform=self.decoder_deform, decoder_shape=self.decoder_shape,
                                  latent_deform=self.latent_deform, latent_shape=self.latent_shape,
                                  encoder_2d=self.encoder_2d, 
+                                 epoch=epoch, cfg=self.cfg,
+                                 generator=self.generator, renderer=self.renderer,
                                  device=self.device)
         loss_total = 0
         for key in loss_dict.keys():
@@ -192,18 +200,18 @@ if __name__ == '__main__':
     
     # dataset
     trainset = Point_cloud_dataset()
-    trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=0, collate_fn=custom_collate_fn)
+    trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=0, collate_fn=custom_collate_fn)
     
     # model initialization
     encoder_3d = PCAutoEncoder(point_dim=3)
     encoder_3d.to(device)
     encoder_3d.train()
     
-    encoder_2d = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+    encoder_2d = ViTModel.from_pretrained('facebook/dino-vitb16')
     encoder_2d.to(device)
     encoder_2d.eval()
     
-    cameranet = CameraNet(feature_dim=512, hidden_dim=512)
+    cameranet = CameraNet(feature_dim=768, hidden_dim=512)
     cameranet.to(device)
     cameranet.train()
     
@@ -215,7 +223,7 @@ if __name__ == '__main__':
                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
                         udf_type='sdf',
                         d_in_spatial=3,)
-    checkpoint = torch.load('checkpoints/3dShape/latest_3d_0126.tar')
+    checkpoint = torch.load('checkpoints/3dShape/latest.tar')
     lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
     decoder_shape.eval()
@@ -236,10 +244,15 @@ if __name__ == '__main__':
     decoder_deform.eval()
     decoder_deform.to(device)
     
+    # load generator
+    generator = Generator(resolution=256)
+    generator.to(device)
+    
     trainer = PointsTrainer(encoder_3d=encoder_3d, encoder_2d=encoder_2d,
                             cameranet=cameranet, trainloader=trainloader,
                             decoder_shape=decoder_shape, decoder_deform=decoder_deform,
                             latent_deform=lat_deform_all, latent_shape=lat_idx_all,
+                            generator=generator, 
                             cfg=CFG, device=device)
     trainer.train(10001)
     

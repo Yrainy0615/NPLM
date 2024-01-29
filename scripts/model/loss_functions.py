@@ -5,7 +5,11 @@ from scripts.model.diff_operators import gradient
 from pytorch_metric_learning import losses
 from scripts.model.reconstruction import sdf_from_latent, latent_to_mesh, deform_mesh
 from pytorch3d.loss import chamfer_distance
-
+from pytorch3d.structures import Meshes
+from scipy.spatial import Delaunay 
+from matplotlib import pyplot as plt
+import trimesh
+from pytorch3d.renderer import TexturesVertex
 
 def compute_loss(batch, decoder, latent_idx,device):
     batch_cuda_npm = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
@@ -18,7 +22,48 @@ def compute_loss(batch, decoder, latent_idx,device):
     loss_dict = actual_compute_loss(batch_cuda_npm, decoder, glob_cond_idx)
     return loss_dict
 
+def img_to_leaf(mask, image_tensor):
+    # Assuming mask is a numpy array and image_tensor is a torch tensor
+    # Get the leaf indices from the mask
+    leaf_indices = torch.nonzero(mask.squeeze() > 0, as_tuple=False)
     
+    # Get vertices - need to convert to CPU and numpy to use Delaunay
+    vertices = torch.stack((leaf_indices[:, 1].float(), 
+                            leaf_indices[:, 0].float(), 
+                            torch.zeros_like(leaf_indices[:, 0]).float()), dim=1)
+    vertices_np = vertices.cpu().numpy()
+    
+    # Calculate faces with Delaunay triangulation
+    tri = Delaunay(vertices_np[:, :2])
+    faces_np = tri.simplices
+    
+    # Function to check if a point is inside the mask
+    def is_point_inside_mask(point, mask):
+        x, y = int(point[0]), int(point[1])
+        return mask[y, x] > 0
+    
+    # Filter faces where the centroid is inside the mask
+    valid_faces = []
+    for face in faces_np:
+        centroid = vertices_np[face].mean(axis=0)
+        if is_point_inside_mask(centroid, mask.squeeze().cpu().numpy()):
+            valid_faces.append(face)
+    valid_faces_np = np.array(valid_faces)
+    
+    # Convert valid_faces to a tensor
+    faces = torch.tensor(valid_faces_np, dtype=torch.int64, device= vertices.device)
+    # Get vertex colors from image_tensor
+    vertex_colors = image_tensor.squeeze()[leaf_indices[:, 0], leaf_indices[:, 1]]
+    
+    # Create textures
+    textures = TexturesVertex(verts_features=vertex_colors.unsqueeze(0))
+    mesh_tri = trimesh.Trimesh(vertices=vertices_np, faces=valid_faces_np)
+    mesh = Meshes(verts=torch.tensor(mesh_tri.vertices, dtype=torch.float32).unsqueeze(0),
+                  faces = torch.tensor(mesh_tri.faces, dtype=torch.int64).unsqueeze(0),
+                  textures=textures)
+
+    return mesh
+ 
 def actual_compute_loss(batch_cuda, decoder, glob_cond):
     # prep
     sup_surface = batch_cuda['points'].clone().detach().requires_grad_() 
@@ -159,36 +204,58 @@ def inversion_loss(batch, encoder,device):
     return loss_dict
 
 
-def rgbd_loss(batch, cameranet, encoder_3d, encoder_2d,
-              decoder_shape, decoder_deform, latent_shape, latent_deform, device):
+def rgbd_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg, 
+              decoder_shape, decoder_deform, latent_shape, latent_deform, 
+              renderer, generator,device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     # load data
     points = batch_cuda['points'][0]
     points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
     rgb =batch_cuda['rgb']
-    camera_pose_gt = batch_cuda['camera_pose']
+    camera_pose_gt= batch_cuda['camera_pose']
     canonical_verts_gt = batch_cuda['canonical_verts']
     deformed_verts_gt = batch_cuda['deformed_verts']
     deform_code_gt = latent_deform[int(batch_cuda['deform_index'][0])].to(device)
-    latent_code_gt = latent_shape[int(batch_cuda['shape_index'][0])].to(device)
+    shape_code_gt = latent_shape[int(batch_cuda['shape_index'][0])].to(device)
+    input = batch_cuda['inputs'].to(device)
+    rgb_canonical_gt = batch_cuda['canonical_rgb'].to(device)
+    mask_canonical_gt = batch_cuda['canonical_mask'].to(device)
     
     # forward pass for shape and deformation
-    
     latent_shape_pred, latent_deform_pred = encoder_3d(points_tensor.unsqueeze(0).permute(0,2,1))
-    canonical_mesh = latent_to_mesh(decoder_shape, latent_shape_pred,device)
-    canonical_verts_pred = torch.tensor(canonical_mesh.vertices.astype(float), requires_grad = False, dtype=torch.float32, device=device)
-    chamfer_canonical = chamfer_distance(canonical_verts_pred.unsqueeze(0), canonical_verts_gt) 
-    delta_verts = decoder_deform(canonical_verts_pred, latent_deform_pred.unsqueeze(0).repeat(canonical_verts_pred.shape[0], 1))
-    deformed_verts_pred  = canonical_verts_pred + delta_verts
-    chamfer_deformed = chamfer_distance(deformed_verts_pred.unsqueeze(0), deformed_verts_gt)
-    loss_deform_code = F.mse_loss(latent_deform_pred, deform_code_gt)
-    loss_shape_code = F.mse_loss(latent_shape_pred, latent_shape)
+    #canonical_mesh = latent_to_mesh(decoder_shape, latent_shape_pred,device)
+    #chamfer_canonical = chamfer_distance(canonical_verts_pred.unsqueeze(0), canonical_verts_gt) 
     
+    #chamfer_deformed = chamfer_distance(deformed_verts_pred.unsqueeze(0), deformed_verts_gt)
+    loss_deform_code = F.mse_loss(latent_deform_pred, deform_code_gt.unsqueeze(0))
+    loss_shape_code = F.mse_loss(latent_shape_pred, shape_code_gt.unsqueeze(0))
+        
     loss_dict = {
-        'loss_latent_shape': loss_latent_shape,
-        'loss_latent_deform': loss_latent_deform,
+        'loss_latent_shape': loss_shape_code,
+        'loss_latent_deform': loss_deform_code,
     }
-    
-    
     # forward pass for camera pose and texture
+    if epoch > cfg['train_color']:
+        outputs = encoder_2d(input['pixel_values'].squeeze(0))
+        feat_2d = outputs.pooler_output
+        # camera prediction
+        camera_pose_pred = cameranet(feat_2d)
+        loss_camera_pose = F.mse_loss(camera_pose_pred, camera_pose_gt)        
+        
+        # texture generation
+        texture_fake = generator(feat_2d)
+        loss_texture = F.mse_loss(rgb_canonical_gt, rgb)
+        canonical_mesh = latent_to_mesh(decoder_shape, shape_code_gt,device)
+        canonical_verts = torch.tensor(canonical_mesh.vertices, requires_grad = False, dtype=torch.float32, device=device)
+        canonical_mask_pred = renderer.get_mask_tensor(Meshes(verts=canonical_verts.unsqueeze(0), faces=torch.tensor(canonical_mesh.faces, dtype=torch.long, device=device).unsqueeze(0)))
+        canonical_leaf = img_to_leaf(canonical_mask_pred.float(), texture_fake)
+        canonical_leaf.to(device)
+        delta_verts = decoder_deform(canonical_leaf.verts_packed(), latent_deform_pred.repeat(canonical_leaf.verts_packed().shape[0], 1))
+        new_verts  = canonical_leaf.verts_packed() + delta_verts
+        deformed_mesh = Meshes(verts=new_verts.unsqueeze(0), faces=canonical_leaf.faces_packed().unsqueeze(0),
+                               textures=canonical_leaf.textures_packed())
+
+
+        
+        pass
     return loss_dict
