@@ -170,12 +170,16 @@ class Point_cloud_dataset(Dataset):
         canonical_mesh =load_obj(os.path.join(self.root_dir, canonical_name+'.obj'))
         canonical_verts = canonical_mesh[0]
         camera_file = os.path.join(self.root_dir,'views',deformed_name,'camera.json')
+        point_savename  = depth_file.replace('_depth.png',' _points.npy')
         with open(camera_file) as f:
             camera_info = json.load(f)
-        point_cloud = rgbd_to_point_cloud(rgb_file,depth_file,camera_info)
-        point_savename  = depth_file.replace('_depth.png',' _points.npy')
-        # np.save(point_savename, point_cloud)
-        # print('{} is saved'.format(point_savename))
+        if os.path.exists(point_savename):
+            point_cloud = np.load(point_savename)
+            print('{} is loaded'.format(point_savename))
+        else:
+                point_cloud = rgbd_to_point_cloud(rgb_file,depth_file,camera_info)
+                np.save(point_savename, point_cloud)
+                print('{} is saved'.format(point_savename))
         
         # load rgb
         processor =  ViTImageProcessor.from_pretrained('facebook/dino-vitb16')

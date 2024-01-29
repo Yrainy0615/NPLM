@@ -10,7 +10,6 @@ from scipy.spatial import Delaunay
 from matplotlib import pyplot as plt
 import trimesh
 from pytorch3d.renderer import TexturesVertex
-
 def compute_loss(batch, decoder, latent_idx,device):
     batch_cuda_npm = {k: v.to(device).float() for (k, v) in zip(batch.keys(), batch.values())}
 
@@ -58,11 +57,14 @@ def img_to_leaf(mask, image_tensor):
     # Create textures
     textures = TexturesVertex(verts_features=vertex_colors.unsqueeze(0))
     mesh_tri = trimesh.Trimesh(vertices=vertices_np, faces=valid_faces_np)
-    mesh = Meshes(verts=torch.tensor(mesh_tri.vertices, dtype=torch.float32).unsqueeze(0),
+    mesh = Meshes(verts=torch.tensor(mesh_tri.vertices, dtype=torch.float32, ).unsqueeze(0),
                   faces = torch.tensor(mesh_tri.faces, dtype=torch.int64).unsqueeze(0),
                   textures=textures)
+    # mesh = Meshes(verts=vertices.unsqueeze(0),
+    #               faces= faces[None],
+    #               textures=textures)
 
-    return mesh
+    return mesh, vertices
  
 def actual_compute_loss(batch_cuda, decoder, glob_cond):
     # prep
@@ -248,9 +250,9 @@ def rgbd_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg,
         canonical_mesh = latent_to_mesh(decoder_shape, shape_code_gt,device)
         canonical_verts = torch.tensor(canonical_mesh.vertices, requires_grad = False, dtype=torch.float32, device=device)
         canonical_mask_pred = renderer.get_mask_tensor(Meshes(verts=canonical_verts.unsqueeze(0), faces=torch.tensor(canonical_mesh.faces, dtype=torch.long, device=device).unsqueeze(0)))
-        canonical_leaf = img_to_leaf(canonical_mask_pred.float(), texture_fake)
-        canonical_leaf.to(device)
-        delta_verts = decoder_deform(canonical_leaf.verts_packed(), latent_deform_pred.repeat(canonical_leaf.verts_packed().shape[0], 1))
+        canonical_leaf,caconical_verts_new = img_to_leaf(canonical_mask_pred.float(), texture_fake)
+        # make a copy of the canonical leaf verts
+        delta_verts = decoder_deform(caconical_verts_new, latent_deform_pred.repeat(caconical_verts_new.shape[0], 1))
         new_verts  = canonical_leaf.verts_packed() + delta_verts
         deformed_mesh = Meshes(verts=new_verts.unsqueeze(0), faces=canonical_leaf.faces_packed().unsqueeze(0),
                                textures=canonical_leaf.textures_packed())
