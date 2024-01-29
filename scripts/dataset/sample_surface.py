@@ -64,7 +64,7 @@ def run_poses(manager):
 
 
 if __name__ == "__main__":
-    root = 'dataset/leaf_classification/images'    
+    root = 'dataset/LeafData'    
     save_mesh = True
     all_mesh = []
     for dirpath , dirnames, filenames in os.walk(root):

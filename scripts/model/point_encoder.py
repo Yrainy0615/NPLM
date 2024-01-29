@@ -17,7 +17,7 @@ class PCAutoEncoder(nn.Module):
         self.conv3 = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=1)
         self.conv4 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=1)
         self.conv5 = nn.Conv1d(in_channels=128, out_channels=512, kernel_size=1)
-        self.conv6 = nn.Conv1d(in_channels=128, out_channels=200, kernel_size=1)
+        self.conv6 = nn.Conv1d(in_channels=128, out_channels=512, kernel_size=1)
 
         # self.fc1 = nn.Linear(in_features=1024, out_features=1024)
         # self.fc2 = nn.Linear(in_features=1024, out_features=1024)
@@ -28,7 +28,7 @@ class PCAutoEncoder(nn.Module):
         self.bn1 = nn.BatchNorm1d(64)
         self.bn2 = nn.BatchNorm1d(128)
         self.bn3 = nn.BatchNorm1d(512)
-        self.bn4 = nn.BatchNorm1d(200)
+        self.bn4 = nn.BatchNorm1d(512)
     
     def forward(self, x):
 
@@ -49,12 +49,28 @@ class PCAutoEncoder(nn.Module):
         latent_shape = latent_shape.view(-1, 512)
 
         latent_deform = torch.max(latent_deform, 2, keepdim=True)[0]
-        latent_deform = latent_deform.view(-1, 200)
+        latent_deform = latent_deform.view(-1, 512)
         
 
 
         return latent_shape, latent_deform
-    
+
+class CameraNet(nn.Module):
+    def __init__(self, feature_dim, hidden_dim):
+        super(CameraNet, self).__init__()
+        # 定义MLP结构
+        self.fc = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2)  # 输出有两个值，分别对应方位角和仰角
+        )
+
+    def forward(self, x):
+        return self.fc(x)
+
+
 if __name__ == "__main__":
     # test the autoencoder
     model = PCAutoEncoder(point_dim=3)

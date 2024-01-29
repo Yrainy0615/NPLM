@@ -11,11 +11,11 @@ training:
   root_dir: dataset/leaf_classification/images
   root_dir_color: dataset/LeafData
   save_path: checkpoints/3dShape
-  save_name: exp-sdf3d
-  batch_size: 64
+  save_name: exp-3dShape
+  batch_size: 1
   ckpt_interval: 500
-  ckpt_vis: 10
-  grad_clip: 0.1
+  ckpt_vis: 50
+  grad_clip:   #0.1
   grad_clip_lat: 0.1
   lr: 0.0005
   lr_lat: 0.001

@@ -3,6 +3,8 @@ from torch.nn import functional as F
 import numpy as np
 from scripts.model.diff_operators import gradient    
 from pytorch_metric_learning import losses
+from scripts.model.reconstruction import sdf_from_latent, latent_to_mesh, deform_mesh
+from pytorch3d.loss import chamfer_distance
 
 
 def compute_loss(batch, decoder, latent_idx,device):
@@ -154,4 +156,39 @@ def inversion_loss(batch, encoder,device):
         'loss_latent_shape': loss_latent_shape,
         'loss_latent_deform': loss_latent_deform,
     }
+    return loss_dict
+
+
+def rgbd_loss(batch, cameranet, encoder_3d, encoder_2d,
+              decoder_shape, decoder_deform, latent_shape, latent_deform, device):
+    batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    # load data
+    points = batch_cuda['points'][0]
+    points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
+    rgb =batch_cuda['rgb']
+    camera_pose_gt = batch_cuda['camera_pose']
+    canonical_verts_gt = batch_cuda['canonical_verts']
+    deformed_verts_gt = batch_cuda['deformed_verts']
+    deform_code_gt = latent_deform[int(batch_cuda['deform_index'][0])].to(device)
+    latent_code_gt = latent_shape[int(batch_cuda['shape_index'][0])].to(device)
+    
+    # forward pass for shape and deformation
+    
+    latent_shape_pred, latent_deform_pred = encoder_3d(points_tensor.unsqueeze(0).permute(0,2,1))
+    canonical_mesh = latent_to_mesh(decoder_shape, latent_shape_pred,device)
+    canonical_verts_pred = torch.tensor(canonical_mesh.vertices.astype(float), requires_grad = False, dtype=torch.float32, device=device)
+    chamfer_canonical = chamfer_distance(canonical_verts_pred.unsqueeze(0), canonical_verts_gt) 
+    delta_verts = decoder_deform(canonical_verts_pred, latent_deform_pred.unsqueeze(0).repeat(canonical_verts_pred.shape[0], 1))
+    deformed_verts_pred  = canonical_verts_pred + delta_verts
+    chamfer_deformed = chamfer_distance(deformed_verts_pred.unsqueeze(0), deformed_verts_gt)
+    loss_deform_code = F.mse_loss(latent_deform_pred, deform_code_gt)
+    loss_shape_code = F.mse_loss(latent_shape_pred, latent_shape)
+    
+    loss_dict = {
+        'loss_latent_shape': loss_latent_shape,
+        'loss_latent_deform': loss_latent_deform,
+    }
+    
+    
+    # forward pass for camera pose and texture
     return loss_dict

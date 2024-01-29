@@ -20,6 +20,7 @@ training:
   use_distance: True
   batch_size: 16
   ckpt_interval: 5000
+  ckpt_vis: 1000
   grad_clip: 0.025
   grad_clip_lat: 0.025
   npoints_decoder: 2000

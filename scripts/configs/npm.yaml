@@ -8,14 +8,14 @@ decoder:
 
 
 training:
-  root_dir: dataset/leaf_classification/images
+  root_dir: dataset/LeafData
   root_dir_color: dataset/LeafData
   save_path: checkpoints/2dShape
-  save_name: exp-sdf2d
-  batch_size: 16
+  save_name: exp-LeafData
+  batch_size: 1
   ckpt_interval: 50
   ckpt_vis: 50
-  grad_clip: 0.1
+  grad_clip: None
   grad_clip_lat: 0.1
   lr: 0.0001
   lr_lat: 0.0001

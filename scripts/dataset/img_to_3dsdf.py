@@ -311,20 +311,20 @@ def sdf2d_3d(sdf_2d):
         return sdf_3d
 
 if __name__ == "__main__":
-    root = 'dataset/leaf_classification/images'    
+    root = 'dataset/LeafData'    
     save_mesh = True
     all_masks = []
     for dirpath , dirnames, filenames in os.walk(root):
         for filename in filenames:
-            if filename.endswith('.jpg'):
+            if filename.endswith('.JPG') and 'mask' in filename:
                 all_masks.append(os.path.join(dirpath, filename))
     all_masks.sort()
     for i in range(len(all_masks)):
         mask_path =all_masks[i]
-        save_name = mask_path.replace('.jpg', '_128.obj')
+        save_name = mask_path.replace('.JPG', '_128.obj')
         npy_name = mask_path.replace('.jpg', ' _128.npy')
-        # if os.path.exists(save_name):
-        #     continue
+        if os.path.exists(save_name):
+            continue
         mySDF2D = SDF2D(mask_path)
         sdf_image = mySDF2D.mask2sdf()
         sdf_2d = image_to_sdf(sdf_image)
@@ -332,8 +332,8 @@ if __name__ == "__main__":
         # sdf_2d = cv2.imread('/home/yang/projects/parametric-leaf/dataset/LeafData/Basil/healthy/mask/output/0_sdf.png')
         sdf_3d = sdf2d_3d(sdf_2d)
         # save sdf_ndarray to npy
-        np.save(npy_name, sdf_2d)
-        print(f'save to {npy_name}')
+        # np.save(npy_name, sdf_2d)
+        # print(f'save to {npy_name}')
         if save_mesh:
             mini = [-.95, -.95, -.95]
             maxi = [0.95, 0.95, 0.95]   
