@@ -245,7 +245,7 @@ if __name__ == '__main__':
     decoder.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder = decoder.to(device)
     trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device,args)
-    trainer.train(5000)
+    trainer.train(10001)
             
         
         

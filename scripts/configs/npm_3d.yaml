@@ -21,8 +21,8 @@ training:
   lr_lat: 0.001
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.5
-  lr_decay_interval: 2000
-  lr_decay_interval_lat: 2000
+  lr_decay_interval: 1000
+  lr_decay_interval_lat: 1000
 
   npoints_decoder: 2000
   npoints_decoder_space: 500
