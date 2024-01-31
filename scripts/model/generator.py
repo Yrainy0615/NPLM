@@ -210,7 +210,7 @@ class GSynthesis(nn.Module):
 
 class Generator(nn.Module):
 
-    def __init__(self, resolution, latent_size=768, dlatent_size=512,
+    def __init__(self, resolution, latent_size=768*2, dlatent_size=512,
                  conditional=False, n_classes=0, truncation_psi=0.7,
                  truncation_cutoff=8, dlatent_avg_beta=0.995,
                  style_mixing_prob=0.9, **kwargs):

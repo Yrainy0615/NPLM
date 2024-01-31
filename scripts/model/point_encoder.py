@@ -41,8 +41,8 @@ class PCAutoEncoder(nn.Module):
         x = F.relu(self.bn1(self.conv2(x)))
         x = F.relu(self.bn1(self.conv3(x)))
         x = F.relu(self.bn2(self.conv4(x)))
-        latent_shape = F.relu(self.bn3(self.conv5(x)))
-        latent_deform = F.relu(self.bn4(self.conv6(x)))
+        latent_shape = self.bn3(self.conv5(x))
+        latent_deform = self.bn4(self.conv6(x))
 
         # do max pooling 
         latent_shape = torch.max(latent_shape, 2, keepdim=True)[0]

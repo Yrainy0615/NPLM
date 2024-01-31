@@ -11,12 +11,12 @@ from scripts.model.fields import UDFNetwork
 import yaml
 import glob
 import wandb
-from scripts.model.loss_functions import rgbd_loss
+from scripts.model.loss_functions import rgbd_loss, texture_loss
 from transformers import ViTModel
 from scripts.model.generator import Generator
 from scripts.model.renderer import MeshRender
 
-class PointsTrainer(object):
+class TextureTrainer(object):
     def __init__(self, encoder_3d, encoder_2d, 
                  cameranet, trainloader, 
                  latent_shape, latent_deform,
@@ -35,46 +35,56 @@ class PointsTrainer(object):
         self.cfg = cfg['training']
         self.latent_shape = latent_shape
         self.latent_deform = latent_deform
-        self.optimizer_encoder3d = optim.Adam(self.encoder_3d.parameters(), lr=1e-4)
         self.optimizer_cameranet = optim.Adam(self.cameranet.parameters(), lr=1e-4)
         self.optimizer_generator = optim.Adam(self.generator.parameters(), lr=1e-4)
+        self.optimizer_encoder3d = optim.Adam(self.encoder_3d.parameters(), lr=1e-4)
         self.checkpoint_path = self.cfg['save_path']
 
         
     def load_checkpoint(self):
+        checkpoints = glob(self.checkpoint_path+'/*')
+        if len(checkpoints)==0:
+            print('No checkpoints found at {}'.format(self.checkpoint_path))
+            return 0
         path = os.path.join(self.checkpoint_path, 'latest.tar')
+
+
         print('Loaded checkpoint from: {}'.format(path))
         checkpoint = torch.load(path)
-        self.encoder_3d.load_state_dict(checkpoint['encoder3d_state_dict'])
-        self.cameranet.load_state_dict(checkpoint['cameranet_state_dict'])
-        self.optimizer_encoder3d.load_state_dict(checkpoint['optimizer_encoder3d_state_dict'])
-        for param_group in self.optimizer_encoder3d.param_groups:
-            param_group["lr"] = self.cfg['lr']
+        self.decoder.load_state_dict(checkpoint['decoder_state_dict'])
+        self.optimizer_decoder.load_state_dict(checkpoint['optimizer_decoder_state_dict'])
+        self.optimizer_latent.load_state_dict(checkpoint['optimizer_lat_state_dict'])
+        self.latent_idx.load_state_dict(checkpoint['latent_idx_state_dict'])
         epoch = checkpoint['epoch']
-        
-        return epoch
-
-    def reduce_lr(self, epoch):
-        if self.cfg['lr_decay_interval'] is not None and epoch % self.cfg['lr_decay_interval'] == 0:
+        for param_group in self.optimizer_decoder.param_groups:
+            print('Setting LR to {}'.format(self.cfg['lr']))
+            param_group['lr'] = self.cfg['lr']
+        for param_group in self.optimizer_latent.param_groups:
+            print('Setting LR to {}'.format(self.cfg['lr_lat']))
+            param_group['lr'] = self.cfg['lr_lat']
+        if self.cfg['lr_decay_interval'] is not None:
             decay_steps = int(epoch/self.cfg['lr_decay_interval'])
             lr = self.cfg['lr'] * self.cfg['lr_decay_factor']**decay_steps
             print('Reducting LR to {}'.format(lr))
-            for param_group in self.optimizer_encoder3d.param_groups:
+            for param_group in self.optimizer_decoder.param_groups:
+                param_group["lr"] = self.lr * self.cfg['lr_decay_factor']**decay_steps
+        if self.cfg['lr_decay_interval_lat'] is not None:
+            decay_steps = int(epoch/self.cfg['lr_decay_interval_lat'])
+            lr = self.cfg['lr_lat'] * self.cfg['lr_decay_factor_lat']**decay_steps
+            print('Reducting LR to {}'.format(lr))
+            for param_group in self.optimizer_latent.param_groups:
                 param_group["lr"] = lr
+        return epoch
 
-        if epoch > 1000 and self.cfg['lr_decay_interval_lat'] is not None and epoch % self.cfg['lr_decay_interval_lat'] == 0:
+    def reduce_lr(self, epoch):
+
+        if   self.cfg['lr_decay_interval_lat'] is not None and epoch % self.cfg['lr_decay_interval_lat'] == 0:
             decay_steps = int(epoch/self.cfg['lr_decay_interval_lat'])
             lr = self.cfg['lr_lat'] * self.cfg['lr_decay_factor_lat']**decay_steps
             print('Reducting LR for latent codes to {}'.format(lr))
             for param_group in self.optimizer_cameranet.param_groups:
                 param_group["lr"] = lr
             
-            # if self.cfg['lr_decay_interval_lat'] is not None and epoch % self.cfg['lr_decay_interval_lat'] == 0:
-            #     decay_steps = int(epoch/self.cfg['lr_decay_interval_lat'])
-            #     lr = self.cfg['lr_lat'] * self.cfg['lr_decay_factor_lat']**decay_steps
-            #     print('Reducting LR for latent codes to {}'.format(lr))
-            #     for param_group in self.generator.param_groups:
-            #         param_group["lr"] = lr
     
     def save_checkpoint(self, epoch,save_name):
         if not os.path.exists(self.checkpoint_path):
@@ -114,10 +124,12 @@ class PointsTrainer(object):
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict = self.train_step(batch, epoch,args)
+                loss_dict, texture_gt, texture_pred = self.train_step(batch, epoch,args)
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
                 if args.use_wandb:
                     wandb.log(loss_values)
+                    wandb.log({'texture_gt': wandb.Image(texture_gt),
+                               'texture_pred': wandb.Image(texture_pred)})
                 for k in loss_dict:
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0 and epoch >0:
@@ -133,9 +145,9 @@ class PointsTrainer(object):
             print(print_str)
 
     def train_step(self, batch, epoch, args):
-        self.optimizer_encoder3d.zero_grad()
-        # self.optimizer_cameranet.zero_grad()
-        loss_dict = rgbd_loss(batch, cameranet=self.cameranet, encoder_3d=self.encoder_3d,
+        self.optimizer_cameranet.zero_grad()
+        self.generator.zero_grad()
+        loss_dict, texture_gt, texture_pred = texture_loss(batch, cameranet=self.cameranet, encoder_3d=self.encoder_3d,
                                  decoder_deform=self.decoder_deform, decoder_shape=self.decoder_shape,
                                  latent_deform=self.latent_deform, latent_shape=self.latent_shape,
                                  encoder_2d=self.encoder_2d, 
@@ -150,23 +162,22 @@ class PointsTrainer(object):
         
         if self.cfg['grad_clip'] is not None:
             torch.nn.utils.clip_grad_norm_(self.encoder_3d.parameters(), max_norm=self.cfg['grad_clip'])
-            # torch.nn.utils.clip_grad_norm_(self.cameranet.parameters(), max_norm=self.cfg['grad_clip'])
-            # torch.nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=self.cfg['grad_clip'])
-        self.optimizer_encoder3d.step()
-        # self.optimizer_cameranet.step()
-        # self.optimizer_generator.step()
+            torch.nn.utils.clip_grad_norm_(self.cameranet.parameters(), max_norm=self.cfg['grad_clip'])
+            torch.nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=self.cfg['grad_clip'])
+        self.optimizer_cameranet.step()
+        self.optimizer_generator.step()
 
         loss_dict = {k: loss_dict[k].item() for k in loss_dict.keys()}
 
         loss_dict.update({'loss': loss_total.item()})
            
 
-        return loss_dict    
+        return loss_dict    , texture_gt, texture_pred
 
 if __name__ == '__main__':       
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
     parser.add_argument('--gpu', type=int, default=0, help='gpu index')
-    parser.add_argument('--wandb', type=str, default='inference', help='run name of wandb')
+    parser.add_argument('--wandb', type=str, default='texture', help='run name of wandb')
     parser.add_argument('--output', type=str, default='shape', help='output directory')
     parser.add_argument('--use_wandb', action='store_true', help='use wandb')
     parser.add_argument('--save_mesh', action='store_true', help='save mesh')
@@ -183,8 +194,8 @@ if __name__ == '__main__':
         wandb.config.update(CFG)
     
     # dataset
-    trainset = Point_cloud_dataset(mode='shape')
-    trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
+    trainset = Point_cloud_dataset(mode='texture')
+    trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=0)
     print('data loaded: {} samples'.format(len(trainloader)))
     # model initialization
     encoder_3d = PCAutoEncoder(point_dim=3)
@@ -232,7 +243,7 @@ if __name__ == '__main__':
     generator = Generator(resolution=256)
     generator.to(device)
     
-    trainer = PointsTrainer(encoder_3d=encoder_3d, encoder_2d=encoder_2d,
+    trainer = TextureTrainer(encoder_3d=encoder_3d, encoder_2d=encoder_2d,
                             cameranet=cameranet, trainloader=trainloader,
                             decoder_shape=decoder_shape, decoder_deform=decoder_deform,
                             latent_deform=lat_deform_all, latent_shape=lat_idx_all,

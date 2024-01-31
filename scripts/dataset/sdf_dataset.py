@@ -149,9 +149,18 @@ class LeafSDF3dDataset(Dataset):
                 if filename.endswith('_3d.npy'):
                     self.all_file.append(os.path.join(dirpath, filename))
         self.all_file.sort()
+        
+        extra_file_path = 'dataset/leaf_classification/images'
+        self.all_extra_file = []
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            for filename in filenames:
+                if filename.endswith('_3d.npy'):
+                    self.all_extra_file.append(os.path.join(dirpath, filename))
+        self.all_extra_file.sort()
         self.num_samples = num_samples
         self.sigma_near = sigma_near
         self.num_samples_space = num_samples_space
+        self.all_file.extend(self.all_extra_file)
         
     def __len__(self):
         return len(self.all_file)

@@ -10,9 +10,9 @@ decoder:
 training:
   root_dir: dataset/leaf_classification/images
   root_dir_color: dataset/LeafData
-  save_path: checkpoints/3dShape
+  save_path: checkpoints/all_shape
   save_name: exp-3dShape
-  batch_size: 1
+  batch_size: 64
   ckpt_interval: 500
   ckpt_vis: 50
   grad_clip:   #0.1
@@ -31,7 +31,7 @@ training:
   weight_decay: 0.02
   lambdas: 
     lat_reg: 0.01
-    surf_sdf: 2
+    surf_sdf: 100
     normals: 0.3
     space_sdf: 0.1
     grad: 0.1

@@ -34,10 +34,7 @@ class ShapeTrainer(object):
         torch.nn.init.normal_(
             self.latent_idx.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim)
         )
-        # self.latent_spc = torch.nn.Embedding(len(trainset.all_species), decoder.lat_dim//2, max_norm = 1.0, sparse=False, device = device).float()
-        # torch.nn.init.normal_(
-        #     self.latent_spc.weight.data, 0.0, 0.1/math.sqrt(decoder.lat_dim//2)
-        # )   
+
         print(self.latent_idx.weight.shape)
         # print(self.latent_spc.weight.shape)
         self.trainloader = trainloader
@@ -55,20 +52,18 @@ class ShapeTrainer(object):
         self.checkpoint_path = self.cfg['save_path']
         
     def load_checkpoint(self):
-        checkpoints = glob(self.checkpoint_path+'/*')
-        if len(checkpoints)==0:
-            print('No checkpoints found at {}'.format(self.checkpoint_path))
-            return 0
-        path = os.path.join(self.checkpoint_path, 'latest.tar')
+        # path = os.path.join(self.checkpoint_path, 'latest.tar')
+        # print('Loaded checkpoint from: {}'.format(path))
 
-
-        print('Loaded checkpoint from: {}'.format(path))
-        checkpoint = torch.load(path)
-        self.decoder.load_state_dict(checkpoint['decoder_state_dict'])
-        self.optimizer_decoder.load_state_dict(checkpoint['optimizer_decoder_state_dict'])
-        self.optimizer_latent.load_state_dict(checkpoint['optimizer_lat_state_dict'])
-        self.latent_idx.load_state_dict(checkpoint['latent_idx_state_dict'])
-        epoch = checkpoint['epoch']
+        checkpoint_leaf = torch.load('checkpoints/3dShape/latest.tar')
+        checkpoint_extra  = torch.load('checkpoints/3dShape/latest_3d_0126.tar')
+        self.decoder.load_state_dict(checkpoint_leaf['decoder_state_dict'])
+        # self.optimizer_decoder.load_state_dict(checkpoint['optimizer_decoder_state_dict'])
+        # self.optimizer_latent.load_state_dict(checkpoint['optimizer_lat_state_dict'])
+        latent_leaf = checkpoint_leaf['latent_idx_state_dict']['weight']
+        latent_extra = checkpoint_extra['latent_idx_state_dict']['weight']
+        self.latent_idx.weight.data = torch.cat([latent_leaf, latent_extra], dim=0)
+        epoch = 0
         for param_group in self.optimizer_decoder.param_groups:
             print('Setting LR to {}'.format(self.cfg['lr']))
             param_group['lr'] = self.cfg['lr']
@@ -117,12 +112,8 @@ class ShapeTrainer(object):
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
-                      #  'optimizer_lat_val_state_dict': self.optimizer_lat_val.state_dict(),
                         'latent_idx_state_dict': self.latent_idx.state_dict(),
-                   #     'latent_spc_state_dict': self.latent_spc.state_dict(),
-                  
-                       # 'latent_codes_val_state_dict': self.latent_codes_val.state_dict()
-                       },
+                        },
                        path)
        
         else:
@@ -142,7 +133,7 @@ class ShapeTrainer(object):
        
     def train_step(self, batch):
         self.decoder.eval()
-        #self.optimizer_decoder.zero_grad()
+        self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
         loss_dict = compute_sdf_3d_loss(batch, self.decoder, self.latent_idx, self.device)
         loss_total = 0
@@ -156,7 +147,7 @@ class ShapeTrainer(object):
 
         if self.cfg['grad_clip_lat'] is not None:
             torch.nn.utils.clip_grad_norm_(self.latent_idx.parameters(), max_norm=self.cfg['grad_clip_lat'])
-        #self.optimizer_decoder.step()
+        self.optimizer_decoder.step()
         self.optimizer_latent.step()
 
         loss_dict = {k: loss_dict[k].item() for k in loss_dict.keys()}
@@ -241,8 +232,6 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          use_mapping=CFG['decoder']['use_mapping'],
                          udf_type='sdf')
-    checkpoint_shape = torch.load('checkpoints/3dShape/latest_3d_0126.tar')
-    decoder.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder = decoder.to(device)
     trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device,args)
     trainer.train(10001)

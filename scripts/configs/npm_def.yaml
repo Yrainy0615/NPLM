@@ -15,28 +15,33 @@ deform_decoder:
 training:
   shape_checkpoints: checkpoints/2dShape/exp-sdf2d__1000.tar
   root_dir: dataset/ScanData/deformation
-  save_name: exp-deform
-  train_color: -1
+  save_name: exp-inference
+  save_path: checkpoints/inference
+  train_color: 1000
   use_nce: False
   use_distance: True
-  batch_size: 1
-  ckpt_interval: 5000
+  batch_size: 32
+  ckpt_interval: 50
   ckpt_vis: 1000
   grad_clip: 0.025
   grad_clip_lat: 0.025
   npoints_decoder: 2000
   weight_decay: 0.02
   lambdas:
-    corresp: 500.0
-    lat_reg: 5.0e-05
-    loss_reg_zero: 0.0
-    loss_nce: 1
-    loss_distance: 5
-  lr: 0.01
-  lr_decay_factor: 0.2
+    # corresp: 500.0
+    # lat_reg: 5.0e-05
+    # loss_reg_zero: 0.0
+    # loss_nce: 1
+    # loss_distance: 5
+    loss_latent_shape: 1
+    loss_latent_deform: 1
+    loss_camera_pose: 0.1
+    loss_texture: 1
+  lr: 0.0001
+  lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.2
-  lr_decay_interval: 1000
-  lr_decay_interval_lat: 1000
+  lr_decay_interval: 10
+  lr_decay_interval_lat: 10
   lr_lat: 0.005
   npoints_decoder: 1000
   shape_ckpt: 30000

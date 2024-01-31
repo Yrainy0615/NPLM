@@ -75,7 +75,9 @@ class MeshRender():
         mesh.to(self.device)
         return self.renderer.rasterizer(mesh)
     
-    def get_mask(self, mesh):
+    def get_mask(self, mesh, camera= None):
+        if camera is not None:
+            renderer.cameras = camera
         fragments = self.renderer.rasterizer(mesh)
         mask = fragments.zbuf > 0
         mask = mask.detach().cpu().float().squeeze().numpy()
