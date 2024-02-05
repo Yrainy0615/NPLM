@@ -145,12 +145,11 @@ class VoxelTrainer(object):
         
         
         if self.cfg['grad_clip'] is not None:
-            torch.nn.utils.clip_grad_norm_(self.encoder_3d.parameters(), max_norm=self.cfg['grad_clip'])
-            # torch.nn.utils.clip_grad_norm_(self.cameranet.parameters(), max_norm=self.cfg['grad_clip'])
-            # torch.nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=self.cfg['grad_clip'])
-        self.optimizer_encoder3d.step()
-        # self.optimizer_cameranet.step()
-        # self.optimizer_generator.step()
+            torch.nn.utils.clip_grad_norm_(self.encoder_shape.parameters(), max_norm=self.cfg['grad_clip'])
+            torch.nn.utils.clip_grad_norm_(self.encoder_pose.parameters(), max_norm=self.cfg['grad_clip'])
+     
+        self.optimizer_encoder_shape.step()
+        self.optimizer_encoder_pose.step()
 
         loss_dict = {k: loss_dict[k].item() for k in loss_dict.keys()}
 
