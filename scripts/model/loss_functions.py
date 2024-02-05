@@ -211,29 +211,20 @@ def inversion_loss(batch, encoder,device):
     return loss_dict
 
 
-def rgbd_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg, 
-              decoder_shape, decoder_deform, latent_shape, latent_deform, 
-              renderer, generator,device):
+def rgbd_loss(batch, encoder_shape,encoder_pose, 
+              latent_shape, latent_deform,device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     # load data
-    points = batch_cuda['points']
+    voxel = batch_cuda['voxel']
     # points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
-    rgb =batch_cuda['rgb']
-    camera_pose_gt= batch_cuda['camera_pose']
     deform_code_gt = latent_deform[(batch_cuda['deform_index']).long()].to(device)
     shape_code_gt = latent_shape[batch_cuda['shape_index'].long()].to(device)
-    input = batch_cuda['inputs'].to(device)
-    rgb_canonical_gt = batch_cuda['canonical_rgb'].to(device)
-    mask_canonical_gt = batch_cuda['canonical_mask'].to(device)
 
     # forward pass for shape and deformation
-    latent_shape_pred, latent_deform_pred = encoder_3d(points.permute(0,2,1))
-    #canonical_mesh = latent_to_mesh(decoder_shape, latent_shape_pred,device)
-    #chamfer_canonical = chamfer_distance(canonical_verts_pred.unsqueeze(0), canonical_verts_gt) 
-    
-    #chamfer_deformed = chamfer_distance(deformed_verts_pred.unsqueeze(0), deformed_verts_gt)
-    loss_deform_code = F.mse_loss(latent_deform_pred, deform_code_gt)
-    loss_shape_code = F.mse_loss(latent_shape_pred, shape_code_gt)
+    latent_shape_pred = encoder_shape(voxel)
+    latent_deform_pred = encoder_pose(voxel)
+    loss_deform_code = F.mse_loss(latent_deform_pred.squeeze(), deform_code_gt)
+    loss_shape_code = F.mse_loss(latent_shape_pred.squeeze(), shape_code_gt)
         
     loss_dict = {
         'loss_latent_shape': loss_shape_code,

@@ -86,7 +86,7 @@ class MeshRender():
     def get_mask_tensor(self, mesh):
         fragments = self.renderer.rasterizer(mesh)
         mask = fragments.zbuf > 0
-        return mask
+        return mask.float().squeeze()
 
     def get_depth(self, mesh):
         fragments = self.renderer.rasterizer(mesh)

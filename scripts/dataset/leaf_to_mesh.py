@@ -31,6 +31,35 @@ from pytorch3d.renderer import (
     SoftPhongShader,
     TexturesVertex)
 from matplotlib import pyplot as plt
+from trimesh.visual.texture import TextureVisuals
+from PIL import Image
+
+def create_uv_map_and_texture(vertices, image):
+    uv_map = vertices[:, :2]  
+    uv_map = uv_map.astype(np.float32)
+    uv_map[:, 0] /= image.shape[1]  
+    uv_map[:, 1] /= image.shape[0] 
+
+    # create texture
+    texture_image = Image.new('RGB', image.shape[:2])
+    for vert, uv in zip(vertices, uv_map):
+        x, y = int(uv[0] * image.shape[1]), int((1 - uv[1]) * image.shape[0])
+        texture_image.putpixel((x, y), tuple(image[y, x]))
+
+    return uv_map, np.array(texture_image)
+
+def create_mtl_file(texture_file_name, mtl_file_name="leaf_material.mtl"):
+    mtl_content = f"""
+newmtl leaf_material
+Ka 1.0 1.0 1.0
+Kd 1.0 1.0 1.0
+Ks 0.0 0.0 0.0
+d 1.0
+illum 2
+map_Kd {texture_file_name}
+"""
+    with open(mtl_file_name, "w") as f:
+        f.write(mtl_content)
 
 def normalize_to_center(data):
    
@@ -264,6 +293,8 @@ class LeaftoMesh():
         tri = Delaunay(vertices[:, :2])
         faces = tri.simplices
         vertex_colors = image[leaf_indices[0], leaf_indices[1]]
+        uv_map, texture_image = create_uv_map_and_texture(vertices, image)
+
         valid_faces = []
         # delete faces which is not in maskl
         def is_point_inside_mask(point, mask):
@@ -274,11 +305,14 @@ class LeaftoMesh():
             if is_point_inside_mask(centroid, mask):
                 valid_faces.append(face)
         valid_faces = np.array(valid_faces)
+        texture_image_path = 'texture.png'
+        Image.fromarray(texture_image).save(texture_image_path)
+        create_mtl_file(texture_image_path)
         # Create a mesh with only the faces that are completely inside the mask
-        mesh = trimesh.Trimesh(vertices=vertices, faces=valid_faces,vertex_colors=vertex_colors)
-
-        # Remove the extraneous faces from the mesh
-
+        mesh = trimesh.Trimesh(vertices=vertices, faces=valid_faces, vertex_colors=vertex_colors, process=False)
+        mesh_torch = pytorch3d.structures.Meshes(verts=[torch.from_numpy(mesh.vertices).float()], faces=[torch.from_numpy(mesh.faces).int()])
+        mesh_torch.textures = TexturesVertex(verts_features=torch.from_numpy(vertex_colors).float().unsqueeze(0))
+        mesh.export('leaf.ply', include_texture=True)
         return mesh
 
 
@@ -300,8 +334,8 @@ if __name__ == "__main__":
     
         mesh = leaf_to_mesh.to_mesh(mask_path, image_path)
         #mesh = repair_mesh(mesh)
-        mesh.export(f'dataset/Mesh_colored/Lemon{i}.obj', include_color=True)
-        print('{} is saved'.format(f'dataset/Mesh_colored/Lemon{i}.obj') )
+        mesh.export(f'dataset/TestData/Lemon{i}.ply')
+        print('{} is saved'.format(f'dataset/TestData/Lemon{i}.obj') )
 
         
 

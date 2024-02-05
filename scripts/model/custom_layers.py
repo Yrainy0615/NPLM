@@ -313,3 +313,39 @@ class Truncation(nn.Module):
         interp = torch.lerp(self.avg_latent, x, self.threshold)
         do_trunc = (torch.arange(x.size(1)) < self.max_layer).view(1, -1, 1).to(x.device)
         return torch.where(do_trunc, interp, x)
+    
+class ResBlock(torch.nn.Module):
+    def __init__(self, n_out, kernel=3, normalization=torch.nn.BatchNorm3d, activation=torch.nn.ReLU):
+        super().__init__()
+        self.block0 = torch.nn.Sequential(
+            torch.nn.Conv3d(n_out, n_out, kernel_size=kernel, stride=1, padding=(kernel//2)),
+            normalization(n_out),
+            activation(inplace=True)
+        )
+        
+        self.block1 = torch.nn.Sequential(
+            torch.nn.Conv3d(n_out, n_out, kernel_size=kernel, stride=1, padding=(kernel//2)),
+            normalization(n_out),
+        )
+
+        self.block2 = torch.nn.ReLU()
+
+    def forward(self, x0):
+        x = self.block0(x0)
+
+        x = self.block1(x)
+        
+        x = self.block2(x + x0)
+        return x
+
+
+def make_conv(n_in, n_out, n_blocks, kernel=3, stride=1, normalization=torch.nn.BatchNorm3d, activation=torch.nn.ReLU):
+    blocks = []
+    for i in range(n_blocks):                                                                                                                                                                                                                                                                                             
+        in1 = n_in if i == 0 else n_out
+        blocks.append(torch.nn.Sequential(
+            torch.nn.Conv3d(in1, n_out, kernel_size=kernel, stride=stride, padding=(kernel//2)),
+            normalization(n_out),
+            activation(inplace=True)
+        ))
+    return torch.nn.Sequential(*blocks)

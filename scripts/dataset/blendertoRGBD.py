@@ -17,7 +17,9 @@ object around the origin. The images are saved to the output directory.
 import json
 import bpy
 from mathutils import Vector
-
+import debugpy
+debugpy.listen(5678)
+debugpy.wait_for_client()
 
 def add_lighting() -> None:
     # add a new light
@@ -39,7 +41,9 @@ def load_object(object_path: str) -> None:
         bpy.ops.import_scene.fbx(filepath=object_path)
     elif object_path.endswith(".obj"):
         bpy.ops.wm.obj_import(filepath=object_path)
-        mesh = bpy.context.active_object
+        bpy.context.view_layer.objects.active = bpy.context.selected_objects[-1]  # Ensure the active object is the newly imported one
+        mesh = bpy.context.view_layer.objects.active
+        #mesh = bpy.context.active_object
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.object.material_slot_add()
@@ -61,6 +65,14 @@ def load_object(object_path: str) -> None:
         mat_slot.material = mat
         # Switch back to object mode and deselect everything
         bpy.ops.object.mode_set(mode='OBJECT')
+        # rotate the object
+        location = np.random.uniform(low=[-0.5, -0.5, -0.5], high=[0.5, 0.5, 0.5])
+        rotation = np.radians(np.random.uniform(low = [0,0,0], high=[180,180,180]))
+        set_obj_rotation(mesh, rotation)
+        mesh.location =location
+        mesh["category_id"] = 0
+        
+        
     else:
         raise ValueError(f"Unsupported file type: {object_path}")
 
@@ -93,6 +105,11 @@ def scene_meshes():
         if isinstance(obj.data, (bpy.types.Mesh)):
             yield obj
 
+def set_obj_rotation(obj, rotation_euler):
+    obj.rotation_euler[0] = rotation_euler[0]  
+    obj.rotation_euler[1] = rotation_euler[1]  
+    obj.rotation_euler[2] = rotation_euler[2]  
+    bpy.context.view_layer.update()
 
 def normalize_scene(format="glb"):
     bbox_min, bbox_max = scene_bbox()
@@ -128,7 +145,11 @@ def save_images(object_file: str) -> None:
     os.makedirs(args.output_dir, exist_ok=True)
     filename = os.path.basename(object_file).replace(".obj", "")
     # load the object
-    load_object(object_file)
+    files = os.listdir(object_file)[:6]
+    for file in files:
+        if file.endswith(".obj"):
+            mesh_file = os.path.join(object_file, file)
+            load_object(mesh_file)
     # bproc.utility.reset_keyframes()
     object_uid = os.path.basename(object_file).split(".")[0]
     object_format = os.path.basename(object_file).split(".")[-1]
@@ -141,7 +162,7 @@ def save_images(object_file: str) -> None:
     cam_constraint.target = empty
     
    # fix random seed
-    np.random.seed(0)
+
     img_ids = [f"{view_num}.png" for view_num in range(24)]
     # polar_angles = np.radians([60] * 12 + [90] * 12)
     polar_angles = np.radians(np.random.uniform(15, 75, 24))
@@ -150,52 +171,50 @@ def save_images(object_file: str) -> None:
     location_list = []
     rotation_list = []
     cam2world_list = []
-    for i in range(len(img_ids)):
-        # Sample random camera location around the object
-        location = sample_camera_loc(polar_angles[i], azimuths[i], args.camera_dist)
-        location_list.append(location.tolist())
-        # Compute rotation based on vector going from location towards the location of the object
-        rotation_matrix = bproc.camera.rotation_from_forward_vec([0,0,0] - location)
-        rotation_list.append(rotation_matrix.tolist())
-        # Add homog cam pose based on location an rotation
-        cam2world_matrix = bproc.math.build_transformation_mat(location, rotation_matrix)
-        cam2world_list.append(cam2world_matrix.tolist())
-        print(bproc.camera.add_camera_pose(cam2world_matrix))
+    rotation_matrix = bproc.camera.rotation_from_forward_vec(Vector([0,0,0]) - cam.location)
+    cam2world_matrix = bproc.math.build_transformation_mat(cam.location, rotation_matrix)
+    bproc.camera.add_camera_pose(cam2world_matrix)
+
+    
+    # for i in range(len(img_ids)):
+    #     # Sample random camera location around the object
+    #     location = sample_camera_loc(polar_angles[i], azimuths[i], args.camera_dist)
+    #     location_list.append(location.tolist())
+    #     # Compute rotation based on vector going from location towards the location of the object
+    #     rotation_matrix = bproc.camera.rotation_from_forward_vec([0,0,0] - location)
+    #     rotation_list.append(rotation_matrix.tolist())
+    #     # Add homog cam pose based on location an rotation
+    #     cam2world_matrix = bproc.math.build_transformation_mat(location, rotation_matrix)
+    #     cam2world_list.append(cam2world_matrix.tolist())
+    #     print(bproc.camera.add_camera_pose(cam2world_matrix))
+    # rotate the object
     
     RendererUtility.set_cpu_threads(20)
     bproc.renderer.enable_normals_output()
+    bproc.renderer.enable_segmentation_output(map_by=["category_id", "instance", "name"])
     bproc.renderer.enable_depth_output(activate_antialiasing=False, convert_to_distance=False)
     bproc.renderer.set_output_format(enable_transparency=True)
 
     data = bproc.renderer.render(verbose=True)
-    #bproc.writer.write_hdf5(args.output_dir, data)
-    for index, (image, depth, normal) in enumerate(zip(data["colors"], data["depth"],data['normals'])):
-        save_folder = os.path.join(args.output_dir, filename)
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
-        save_name = "render_" + str(index) + ".png"
-        render_path = os.path.join(save_folder, save_name)
-        save_array_as_image(image, "colors", render_path)
-        depth_mm = 1000.0 * depth  # [m] -> [mm]
-        _BopWriterUtility.save_depth(render_path.replace('.png', '_depth.png'), im=depth_mm)
-    # save camera pose as dict to json file
+    bproc.writer.write_hdf5(args.output_dir, data)
+
 
 
     # 定义包含 NumPy 数组的字典
-    camera = {
-        "location": location_list,
-        "rotation_matrix": rotation_list,
-        "cam2world_matrix": cam2world_list,
-        "polar_angle": polar_angles.tolist(),
-        "azimuth": azimuths.tolist(),
-    }
-    for key, value in camera.items():
-        print(key, ":",type(value))
-    camera_path = os.path.join(save_folder,"camera.json")
-    with open(camera_path, 'w') as f:
-        json.dump(camera, f, indent=4)
+    # camera = {
+    #     "location": location_list,
+    #     "rotation_matrix": rotation_list,
+    #     "cam2world_matrix": cam2world_list,
+    #     "polar_angle": polar_angles.tolist(),
+    #     "azimuth": azimuths.tolist(),
+    # }
+    # for key, value in camera.items():
+    #     print(key, ":",type(value))
+    # camera_path = os.path.join(save_folder,"camera.json")
+    # with open(camera_path, 'w') as f:
+    #     json.dump(camera, f, indent=4)
 
-        print("{} is  saved".format(camera_path))
+    #     print("{} is  saved".format(camera_path))
 
 
     
@@ -215,15 +234,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--engine", type=str, default="CYCLES", choices=["CYCLES", "BLENDER_EEVEE"]
     )
-    parser.add_argument("--mesh", type=str, required=True)
-    parser.add_argument("--camera_dist", type=float, default=1.5)
+   # parser.add_argument("--mesh", type=str, required=True)
+    parser.add_argument("--camera_dist", type=float, default=2)
     parser.add_argument("--resolution", type=int, default=512)
     args = parser.parse_args()
     bproc.init()
     context = bpy.context
     scene = context.scene
     render = scene.render
-
+    np.random.seed(0)
     render.engine = args.engine
     render.image_settings.file_format = "PNG"
     render.image_settings.color_mode = "RGBA"
@@ -247,7 +266,8 @@ if __name__ == "__main__":
     print("view gamma", scene.view_settings.gamma)
     args = parser.parse_args()
     start_i = time.time()    
-    mesh_path = os.path.join(args.object_path, args.mesh)
+    # mesh_path = os.path.join(args.object_path, args.mesh)
+    mesh_path = 'dataset/TestData/test_obj/bael'
     print("{} is loaded".format(mesh_path))
     save_images(mesh_path)
     end_i = time.time()

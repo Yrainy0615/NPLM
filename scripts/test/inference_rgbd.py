@@ -4,14 +4,12 @@ import argparse
 import os
 import sys
 sys.path.append('NPLM')
-from scripts.dataset.rgbd_dataset import Point_cloud_dataset, custom_collate_fn
+from scripts.dataset.rgbd_dataset import Voxel_dataset, custom_collate_fn
 from torch.utils.data import DataLoader
 from scripts.model.point_encoder import PCAutoEncoder, CameraNet
 from scripts.model.fields import UDFNetwork
 import yaml
-import glob
 import wandb
-from scripts.model.loss_functions import rgbd_loss
 from transformers import ViTModel
 from scripts.model.generator import Generator
 from scripts.model.renderer import MeshRender

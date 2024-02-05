@@ -20,6 +20,9 @@ from pytorch3d.structures import Pointclouds
 from scripts.model.point_encoder import PCAutoEncoder
 from pytorch3d.datasets import collate_batched_meshes
 import trimesh
+from scipy.spatial import cKDTree as KDTree
+from scripts.model.reconstruction import create_grid_points_from_bounds
+import  skimage
 
 warnings.filterwarnings('ignore', message='No mtl file provided')
 
@@ -86,12 +89,17 @@ def normalize_verts(verts):
       vertices = (verts - center) *scale
       return vertices
 
-def rgbd_to_point_cloud(rgb_file,depth_file, camera_info):
-    rgb = o3d.io.read_image(rgb_file)
-    depth = o3d.io.read_image(depth_file)
+def rgbd_to_voxel(rgb,depth, grid_points):
+    depth_scale = 1000
+    kdtree = KDTree(grid_points)
+    if type(rgb) ==str:
+        rgb = o3d.io.read_image(rgb)
+        depth = o3d.io.read_image(depth)
+    elif type(rgb) == np.ndarray:
+        rgb = o3d.geometry.Image(np.ascontiguousarray(rgb).astype(np.uint8))
+        depth = np.ascontiguousarray(depth).astype(np.float32) / depth_scale
+        depth = o3d.geometry.Image(np.ascontiguousarray(depth).astype(np.float32))
     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb, depth)
-    cam2world_matrix = camera_info['cam2world_matrix'][1]
-    cam2world_matrix = np.array(cam2world_matrix)
     image_width = 512
     image_height = 512
     sensor_width_mm = 32
@@ -102,27 +110,25 @@ def rgbd_to_point_cloud(rgb_file,depth_file, camera_info):
     intrinsics = o3d.camera.PinholeCameraIntrinsic(image_width, image_height, fx, fy, cx, cy)
     pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
     rgbd_image,intrinsics)
-    voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd,
-                                                            voxel_size=0.01)
-    # target_size = 128
-    # target_voxel_grid = np.zeros((target_size, target_size, target_size))
-    # min_bound = voxel_grid.get_min_bound()
-    # max_bound = voxel_grid.get_max_bound()
-    # scale_factor = (max_bound - min_bound) / target_size
-    # for voxel in voxel_grid.get_voxels():
-    #     x_idx = int((voxel.grid_index[0] * voxel_grid.voxel_size - min_bound[0]) / scale_factor[0])
-    #     y_idx = int((voxel.grid_index[1] * voxel_grid.voxel_size - min_bound[1]) / scale_factor[1])
-    #     z_idx = int((voxel.grid_index[2] * voxel_grid.voxel_size - min_bound[2]) / scale_factor[2])
-
-    #     # if 0 <= x_idx < target_size and 0 <= y_idx < target_size and 0 <= z_idx < target_size:
-    #     target_voxel_grid[x_idx, y_idx, z_idx] = 1
-
+    bb_max = pcd.get_max_bound()
+    bb_min = pcd.get_min_bound()
+    pcd.scale(1 / np.max(bb_max - bb_min),
+          center=pcd.get_center())
     pcd_points = np.asarray(pcd.points)
     pcd_points = normalize_verts(pcd_points)
-    
-    return pcd_points
+    # save occupancy 
+    occupancies = np.zeros(len(grid_points), dtype=np.int8)
+    _, idx = kdtree.query(pcd_points)
+    occupancies[idx] = 1
 
-class Point_cloud_dataset(Dataset):
+    # compressed_occupancies = np.packbits(occupancies)
+    voxels = np.reshape(occupancies, (128,) * 3)
+    # vertices, triangles,_,_ = skimage.measure.marching_cubes(voxels, 0.015)
+    # mesh = trimesh.Trimesh(vertices, triangles)
+    # mesh.export('test.obj')
+    return voxels
+
+class Voxel_dataset(Dataset):
     def __init__(self, mode):
         self.root_dir = 'dataset/Mesh_colored'
         self.deformed_dir = os.path.join(self.root_dir,'deformed')
@@ -143,9 +149,12 @@ class Point_cloud_dataset(Dataset):
         self.all_mask.sort()
         self.plant_type_indices  = extract_info_from_masks(self.all_mask)
         np.random.seed(0)
-        index = np.random.randint(0, len(self.all_depth), 10000)
+        index = np.random.randint(0, len(self.all_depth), 2000)
         self.all_depth_sub = [self.all_depth[i] for i in index]
-
+        mini = [-.95, -.95, -.95]
+        maxi = [0.95, 0.95, 0.95]
+        resolution = 128
+        self.grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
     def __len__(self):
         return len(self.all_depth_sub)
     
@@ -200,20 +209,10 @@ class Point_cloud_dataset(Dataset):
                     'camera_pose': np.array([azimuth, polar_angle]),}
             return data     
         else: 
-            if os.path.exists(point_savename):
-                point_cloud = np.load(point_savename)
-                # print('{} is loaded'.format(point_savename))
-            else:
-                    point_cloud = rgbd_to_point_cloud(rgb_file,depth_file,camera_info)
-                    np.save(point_savename, point_cloud)
-                    # print('{} is saved'.format(point_savename))
-            
-            # random sample 2000 points from point cloud
-            index = np.random.randint(0, len(point_cloud), 3000)
-            point_cloud_sampled = point_cloud[index]
-            # load rgb
+            voxel = rgbd_to_voxel(rgb_file,depth_file,self.grid_points)
+
             data = {
-            'points': point_cloud_sampled,
+            'voxel': voxel,
                 'rgb': np.array(rgb.resize((256,256))),
             'camera_pose': np.array([azimuth, polar_angle]),
             'deform_index': int(deforn_index),
@@ -229,7 +228,7 @@ class Point_cloud_dataset(Dataset):
     
     
 if __name__ == "__main__":
-    dataset = Point_cloud_dataset()
+    dataset = Voxel_dataset()
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=0, collate_fn=default_collate)
     for i_batch, sample_batched in enumerate(dataloader):
         batch = sample_batched
