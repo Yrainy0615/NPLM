@@ -245,20 +245,22 @@ def texture_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg,
     outputs_mask = encoder_2d(input_mask['pixel_values'].squeeze())
     feat_2d = outputs.pooler_output
     feat_mask = outputs_mask.pooler_output
-    camera_gt = batch_cuda['camera_pose']
     canonical_rgb_gt = batch_cuda['canonical_rgb'].to(device)
     canonical_mask_gt = batch_cuda['canonical_mask'].to(device)
     # camera prediction
-    camera_pose_pred = cameranet(feat_2d)    
+    # camera_pose_pred = cameranet(feat_2d)    
 
     # texture generation
     # concat feat_2d and feat_mask
     feat = torch.cat((feat_2d, feat_mask), dim=1)
     texture_fake = generator(feat)
+    texture_fake = texture_fake * canonical_mask_gt.permute(0,3,1,2)
+    # texture_fake_pil = transforms.functional.to_pil_image(texture_fake[0].squeeze().cpu())
+    # texture_gt_pil = transforms.functional.to_pil_image(canonical_mask_gt[0].permute(2,0,1).squeeze().cpu())
     loss_texture = F.mse_loss(texture_fake, rgb.permute(0,3,1,2))
-    loss_camera_pose = F.mse_loss(camera_pose_pred, camera_gt)
+    # loss_camera_pose = F.mse_loss(camera_pose_pred, camera_gt)
     loss_dict={
-        'loss_camera_pose': loss_camera_pose,
+        # 'loss_camera_pose': loss_camera_pose,
         'loss_texture': loss_texture,
     }
     

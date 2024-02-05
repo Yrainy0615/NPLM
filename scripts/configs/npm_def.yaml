@@ -20,7 +20,7 @@ training:
   train_color: 1000
   use_nce: False
   use_distance: True
-  batch_size: 8
+  batch_size: 64
   ckpt_interval: 50
   ckpt_vis: 1000
   grad_clip: 0.025
@@ -37,7 +37,7 @@ training:
     loss_latent_deform: 1
     loss_camera_pose: 0.1
     loss_texture: 1
-  lr: 0.0001
+  lr: 0.001
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.2
   lr_decay_interval: 10

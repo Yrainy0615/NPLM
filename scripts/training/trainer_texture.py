@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 sys.path.append('NPLM')
-from scripts.dataset.rgbd_dataset import Point_cloud_dataset, custom_collate_fn
+from scripts.dataset.rgbd_dataset import Voxel_dataset, custom_collate_fn
 from torch.utils.data import DataLoader
 from scripts.model.point_encoder import PCAutoEncoder, CameraNet
 from scripts.model.fields import UDFNetwork
@@ -194,7 +194,7 @@ if __name__ == '__main__':
         wandb.config.update(CFG)
     
     # dataset
-    trainset = Point_cloud_dataset(mode='texture')
+    trainset = Voxel_dataset(mode='texture')
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=0)
     print('data loaded: {} samples'.format(len(trainloader)))
     # model initialization

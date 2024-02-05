@@ -189,11 +189,11 @@ class Voxel_dataset(Dataset):
         canonical_mask_im = np.rot90(canonical_mask_im, k=1, axes=(0, 1))
         rgb = Image.open(rgb_file).convert("RGB") 
         mask = Image.open(canonical_mask).convert("RGB")
+        mask = np.rot90(mask, k=1, axes=(0, 1))
         processor =  ViTImageProcessor.from_pretrained('facebook/dino-vitb16')
         inputs_mask = processor(images=mask, return_tensors="pt")
         inputs = processor(images=rgb, return_tensors="pt")
         camera_file = os.path.join(self.root_dir,'views',deformed_name,'camera.json')
-        point_savename  = depth_file.replace('_depth.png',' _points.npy')
         with open(camera_file) as f:
                 camera_info = json.load(f)
         azimuth = torch.tensor(camera_info['azimuth'][int(render_index)]).rad2deg()
