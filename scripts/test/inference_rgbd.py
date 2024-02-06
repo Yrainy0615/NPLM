@@ -14,16 +14,17 @@ from transformers import ViTModel
 from scripts.model.generator import Generator
 from scripts.model.renderer import MeshRender
 from scripts.model.reconstruction import sdf_from_latent, latent_to_mesh, deform_mesh
-
+from scripts.model.inference_encoder import ShapeEncoder, PoseEncoder
 
 class Predictor(object):
-    def __init__(self, encoder_3d, encoder_2d, 
+    def __init__(self, encoder_shape, encoder_pose,encoder_2d, 
                  cameranet, trainloader, 
                  latent_shape, latent_deform,
                  decoder_shape, decoder_deform,
                  generator,
                  cfg, device):
-        self.encoder_3d = encoder_3d
+        self.encoder_shape = encoder_shape
+        self.encoder_pose = encoder_pose
         self.encoder_2d = encoder_2d
         self.cameranet = cameranet
         self.trainloader = trainloader
@@ -39,19 +40,19 @@ class Predictor(object):
     def predict(self):
         for i, batch in enumerate(self.trainloader):
             batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            points = batch_cuda['points'][0]
-            points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
+            voxel = batch_cuda['voxel']
             rgb =batch_cuda['rgb']
             deform_name = batch_cuda['deformed_name'][0]
             latent_shape_gt = self.latent_shape[int(batch_cuda['shape_index'][0])]
             latent_deform_gt = self.latent_deform[int(batch_cuda['deform_index'][0])]
             input = batch_cuda['inputs'].to(device)
             # encode 3d
-            latent_shape_pred, latent_deform_pred = self.encoder_3d(points_tensor.unsqueeze(0).permute(0,2,1))
+            latent_shape_pred = self.encoder_shape(voxel)
+            latent_pose_pred = self.encoder_pose(voxel)
             canonical_gt = latent_to_mesh(self.decoder_shape, latent_shape_gt, device)
             canonical_mesh = latent_to_mesh(self.decoder_shape, latent_shape_pred, device)
-            deformed_mesh = deform_mesh(canonical_mesh, self.decoder_deform, latent_deform_pred)
-            # encode 2d
+            deformed_mesh = deform_mesh(canonical_mesh, self.decoder_deform, latent_pose_pred)
+
             deformed_gt =deform_mesh(canonical_gt, self.decoder_deform, latent_deform_gt)
             canonical_mesh.export('{}_canonical.obj'.format(deform_name))
             canonical_gt.export('{}_canonical_gt.obj'.format(deform_name))
@@ -78,15 +79,19 @@ if __name__ == '__main__':
         wandb.config.update(CFG)
     
     # dataset
-    trainset = Point_cloud_dataset(mode='shape')
+    trainset = Voxel_dataset(mode='shape')
     trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=2)
     
-    checkpoint_infer = torch.load('checkpoints/inference/latest.tar')
-    # model initialization
-    encoder_3d = PCAutoEncoder(point_dim=3)
-    encoder_3d.to(device)
-    encoder_3d.eval()
-    encoder_3d.load_state_dict(checkpoint_infer['encoder3d_state_dict'])
+    # networl initialization
+    checkpoint_encoder = torch.load('checkpoints/inference/3dcnn_0206.tar')
+    encoder_shape = ShapeEncoder()
+    encoder_shape.load_state_dict(checkpoint_encoder['encoder_shape_state_dict'])
+    encoder_shape.to(device)
+    encoder_shape.eval()
+    encoder_pose = PoseEncoder()
+    encoder_pose.load_state_dict(checkpoint_encoder['encoder_pose_state_dict'])
+    encoder_pose.to(device)
+    encoder_pose.eval()
     
     encoder_2d = ViTModel.from_pretrained('facebook/dino-vitb16')
     encoder_2d.to(device)
@@ -133,5 +138,5 @@ if __name__ == '__main__':
     # generator.load_state_dict(checkpoint_infer['generator_state_dict'])
     
     # predict
-    predictor = Predictor(encoder_3d, encoder_2d, cameranet, trainloader, lat_idx_all, lat_deform_all, decoder_shape, decoder_deform, generator, CFG, device)
+    predictor = Predictor(encoder_shape, encoder_pose, encoder_2d, cameranet, trainloader, lat_idx_all, lat_deform_all, decoder_shape, decoder_deform, generator, CFG, device)
     predictor.predict()

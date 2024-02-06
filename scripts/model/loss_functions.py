@@ -211,26 +211,50 @@ def inversion_loss(batch, encoder,device):
     return loss_dict
 
 
-def rgbd_loss(batch, encoder_shape,encoder_pose, 
-              latent_shape, latent_deform,device):
+def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera, 
+              latent_shape, latent_deform, 
+              decoder_shape, decoder_deform,
+              renderer, device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     # load data
     voxel = batch_cuda['voxel']
     # points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
     deform_code_gt = latent_deform[(batch_cuda['deform_index']).long()].to(device)
     shape_code_gt = latent_shape[batch_cuda['shape_index'].long()].to(device)
-
+    camera_pose_gt = batch_cuda['camera_pose'].to(device)
     # forward pass for shape and deformation
     latent_shape_pred = encoder_shape(voxel)
     latent_deform_pred = encoder_pose(voxel)
+    camera_pose_pred = encoder_camera(voxel)
     loss_deform_code = F.mse_loss(latent_deform_pred.squeeze(), deform_code_gt)
     loss_shape_code = F.mse_loss(latent_shape_pred.squeeze(), shape_code_gt)
-        
+    loss_camera_pose = F.mse_loss(camera_pose_pred.squeeze(), camera_pose_gt)
+    # test one mesh 
+    canonical_pred = latent_to_mesh(decoder_shape, latent_shape_pred[0], device)
+    if canonical_pred is None:
+        canonical_mask_pred =None
+        canonical_mask_gt =None
+        input_rgb=None
+        canonical_rgb = None
+        canonical_rotated = None
+    else:
+        canonical_gt = latent_to_mesh(decoder_shape, shape_code_gt[0], device)
+        canonical_pred_tensor = Meshes(verts=torch.tensor(canonical_pred.vertices).float().unsqueeze(0), faces=torch.tensor(canonical_pred.faces).float().unsqueeze(0))    
+        canonical_gt_tensor = Meshes(verts=torch.tensor(canonical_gt.vertices).float().unsqueeze(0), faces=torch.tensor(canonical_gt.faces).float().unsqueeze(0))
+        canonical_mask_pred = renderer.get_mask(canonical_pred_tensor.to(device))
+        canonical_mask_gt = renderer.get_mask(canonical_gt_tensor.to(device))
+        input_rgb = batch_cuda['rgb'][0].cpu().numpy()
+        canonical_rgb = batch_cuda['canonical_rgb'][0].cpu().numpy()
+        R,t = look_at_view_transform(2, azim=torch.rad2deg(camera_pose_pred[0].squeeze()[0]), elev=torch.rad2deg(camera_pose_pred[0].squeeze()[1]))
+        camera = FoVPerspectiveCameras(device=device, R=R, T=t)
+        canonical_rotated = renderer.get_mask(canonical_gt_tensor.to(device), camera)
+    
     loss_dict = {
         'loss_latent_shape': loss_shape_code,
         'loss_latent_deform': loss_deform_code,
+        'loss_camera_pose': loss_camera_pose,
     }
-    return loss_dict
+    return loss_dict, canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb, canonical_rotated
     # forward pass for camera pose and texture
 
 def texture_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg, 
@@ -264,23 +288,6 @@ def texture_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg,
         'loss_texture': loss_texture,
     }
     
-        # canonical_verts = torch.tensor(canonical_mesh.vertices, requires_grad = False, dtype=torch.float32, device=device)
-        # canonical_mask_pred = renderer.get_mask_tensor(Meshes(verts=canonical_verts.unsqueeze(0), faces=torch.tensor(canonical_mesh.faces, dtype=torch.long, device=device).unsqueeze(0)))
-        # # canonical_leaf,caconical_verts_new = img_to_leaf(canonical_mask_pred.float(), texture_fake)
-        # # make a copy of the canonical leaf verts
-        # delta_verts = decoder_deform(canonical_verts, deform_code_gt.repeat(canonical_verts.shape[0], 1))
-        # new_verts  = canonical_verts + delta_verts
-        # deformed_mesh = Meshes(verts=new_verts.unsqueeze(0), faces=torch.tensor(canonical_mesh.faces, dtype=torch.long, device=device).unsqueeze(0))
-        # R, T = look_at_view_transform(2,  camera_pose_gt[0][1], camera_pose_gt[0][0])
-        # verts_rgb = torch.ones_like(new_verts)[None]  
-        # textures = TexturesVertex(verts_features=verts_rgb.to(device))
-        # deformed_mesh.textures = textures   
-        # IO().save_mesh(deformed_mesh,'test.obj')
-        # deformed_img = renderer.renderer(deformed_mesh, R=R.to(device), T=T.to(device))
-        # deformed_mask = renderer.renderer.rasterizer(deformed_mesh, R=R.to(device), T=T.to(device))
-        # deformed_mask = deformed_mask.zbuf > 0
-        # deformed_mask_img = deformed_mask.float().squeeze().cpu().numpy()
-        # deformed_img_np = deformed_img.detach().cpu().squeeze().numpy()
     grid_gt  = make_grid(canonical_rgb_gt.permute(0,3,1,2), nrow=8, normalize=True)
     gt_pil = transforms.ToPILImage()(grid_gt.cpu())
     grid_pred = make_grid(texture_fake, nrow=8, normalize=True)

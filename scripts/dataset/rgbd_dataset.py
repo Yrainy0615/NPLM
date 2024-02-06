@@ -112,8 +112,10 @@ def rgbd_to_voxel(rgb,depth, grid_points):
     rgbd_image,intrinsics)
     bb_max = pcd.get_max_bound()
     bb_min = pcd.get_min_bound()
-    pcd.scale(1 / np.max(bb_max - bb_min),
-          center=pcd.get_center())
+    pcd.scale(1 / np.max(bb_max - bb_min), center=pcd.get_center())
+    voxel_3d = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=0.01)
+    # o3d.visualization.draw_geometries([voxel_3d])
+    # o3d.visualization.draw_geometries([pcd])
     pcd_points = np.asarray(pcd.points)
     pcd_points = normalize_verts(pcd_points)
     # save occupancy 
@@ -196,8 +198,8 @@ class Voxel_dataset(Dataset):
         camera_file = os.path.join(self.root_dir,'views',deformed_name,'camera.json')
         with open(camera_file) as f:
                 camera_info = json.load(f)
-        azimuth = torch.tensor(camera_info['azimuth'][int(render_index)]).rad2deg()
-        polar_angle = torch.tensor(camera_info['polar_angle'][int(render_index)]).rad2deg()
+        azimuth = torch.tensor(camera_info['azimuth'][int(render_index)])
+        polar_angle = torch.tensor(camera_info['polar_angle'][int(render_index)])
         if self.mode == 'texture':
             data = {'canonical_rgb': canonical_rgb.copy()/255,
                     'input_mask': inputs_mask,
@@ -213,14 +215,14 @@ class Voxel_dataset(Dataset):
 
             data = {
             'voxel': voxel,
-                'rgb': np.array(rgb.resize((256,256))),
-            'camera_pose': np.array([azimuth, polar_angle]),
+                'rgb': np.array(rgb.resize((256,256)))/255,
+            'camera_pose': np.array([azimuth.deg2rad(), polar_angle.deg2rad()]),
             'deform_index': int(deforn_index),
             'shape_index': shape_index,
             'inputs':inputs,
             'deformed_verts': deformed_verts,
             'canonical_rgb': canonical_rgb.copy()/255,
-            'canonical_mask': np.array(np.array(mask.resize((256,256)))/255),
+            'canonical_mask': canonical_mask_im.copy()/255,
             'deformed_name': deformed_name
             }
             return data

@@ -6,7 +6,7 @@ import sys
 sys.path.append('NPLM')
 from scripts.dataset.rgbd_dataset import Voxel_dataset, custom_collate_fn
 from torch.utils.data import DataLoader
-from scripts.model.point_encoder import PCAutoEncoder, CameraNet
+from scripts.model.point_encoder import PCAutoEncoder
 from scripts.model.fields import UDFNetwork
 import yaml
 import glob
@@ -15,11 +15,11 @@ from scripts.model.loss_functions import rgbd_loss
 from transformers import ViTModel
 from scripts.model.generator import Generator
 from scripts.model.renderer import MeshRender
-from scripts.model.inference_encoder import ShapeEncoder, PoseEncoder
+from scripts.model.inference_encoder import ShapeEncoder, PoseEncoder, CameraEncoder
 
 class VoxelTrainer(object):
     def __init__(self, encoder_shape, encoder_pose, encoder_2d,
-                 cameranet, trainloader, 
+                 encoder_camera, trainloader, 
                  latent_shape, latent_deform,
                  decoder_shape, decoder_deform,
                  generator,
@@ -27,7 +27,7 @@ class VoxelTrainer(object):
         self.encoder_shape = encoder_shape
         self.encoder_pose = encoder_pose
         self.encoder_2d = encoder_2d
-        self.cameranet = cameranet
+        self.encoder_camera = encoder_camera
         self.trainloader = trainloader
         self.decoder_shape = decoder_shape
         self.decoder_deform = decoder_deform
@@ -39,7 +39,9 @@ class VoxelTrainer(object):
         self.latent_deform = latent_deform
         self.optimizer_encoder_shape = optim.Adam(self.encoder_shape.parameters(), lr=1e-4)
         self.optimizer_encoder_pose = optim.Adam(self.encoder_pose.parameters(), lr=1e-4)
+        self.optimizer_encoder_camera = optim.Adam(self.encoder_camera.parameters(), lr=1e-4)
         self.checkpoint_path = self.cfg['save_path']
+        self.renderer = MeshRender(device=device)
 
         
     def load_checkpoint(self):
@@ -48,7 +50,9 @@ class VoxelTrainer(object):
         checkpoint = torch.load(path)
         self.encoder_shape.load_state_dict(checkpoint['encoder_shape__state_dict'])
         self.encoder_pose.load_state_dict(checkpoint['encoder_pose_state_dict'])
-        self.optimizer_encoder_shape.load_state_dict(checkpoint['optimizer_encoder_pose_state_dict'])
+        self.encoder_camera.load_state_dict(checkpoint['encoder_camera_state_dict'])
+        self.optimizer_encoder_camera.load_state_dict(checkpoint['optimizer_encoder_camera_state_dict'])
+        self.optimizer_encoder_shape.load_state_dict(checkpoint['optimizer_encoder_shape_state_dict'])
         self.optimizer_encoder_pose.load_state_dict(checkpoint['optimizer_encoder_pose_state_dict'])
         for param_group in self.optimizer_encoder3d.param_groups:
             param_group["lr"] = self.cfg['lr']
@@ -60,19 +64,16 @@ class VoxelTrainer(object):
         if self.cfg['lr_decay_interval'] is not None and epoch % self.cfg['lr_decay_interval'] == 0:
             decay_steps = int(epoch/self.cfg['lr_decay_interval'])
             lr = self.cfg['lr'] * self.cfg['lr_decay_factor']**decay_steps
+            lr_cam = self.cfg['lr_cam'] * self.cfg['lr_decay_factor']**decay_steps
             print('Reducting LR to {}'.format(lr))
             for param_group in self.optimizer_encoder_pose.param_groups:
                 param_group["lr"] = lr
             for param_group in self.optimizer_encoder_shape.param_groups:
                 param_group["lr"] = lr
-
-        if epoch > 1000 and self.cfg['lr_decay_interval_lat'] is not None and epoch % self.cfg['lr_decay_interval_lat'] == 0:
-            decay_steps = int(epoch/self.cfg['lr_decay_interval_lat'])
-            lr = self.cfg['lr_lat'] * self.cfg['lr_decay_factor_lat']**decay_steps
-            print('Reducting LR for latent codes to {}'.format(lr))
-            for param_group in self.optimizer_cameranet.param_groups:
+            for param_group in self.optimizer_encoder_camera.param_groups:
                 param_group["lr"] = lr
-            
+
+
             # if self.cfg['lr_decay_interval_lat'] is not None and epoch % self.cfg['lr_decay_interval_lat'] == 0:
             #     decay_steps = int(epoch/self.cfg['lr_decay_interval_lat'])
             #     lr = self.cfg['lr_lat'] * self.cfg['lr_decay_factor_lat']**decay_steps
@@ -88,8 +89,10 @@ class VoxelTrainer(object):
             torch.save({'epoch': epoch,
                         'encoder_shape_state_dict': self.encoder_shape_.state_dict(),
                         'encoder_pose_state_dict': self.encoder_pose.state_dict(),
+                        'encoder_camera_state_dict': self.encoder_camera.state_dict(),
                         'optimizer_encoder_pose_state_dict': self.optimizer_encoder_pose.state_dict(),
-                        'optimizer_encoder_shape_state_dict': self.optimizer_encoder_shape.state_dict(),},
+                        'optimizer_encoder_shape_state_dict': self.optimizer_encoder_shape.state_dict(),
+                        'optimizer_encoder_camera_state_dict': self.optimizer_encoder_camera.state_dict(),},
                        path)
         else:
             path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
@@ -97,8 +100,10 @@ class VoxelTrainer(object):
              torch.save({'epoch': epoch,
                         'encoder_shape_state_dict': self.encoder_shape_.state_dict(),
                         'encoder_pose_state_dict': self.encoder_pose.state_dict(),
+                        'encoder_camera_state_dict': self.encoder_camera.state_dict(),
                         'optimizer_encoder_pose_state_dict': self.optimizer_encoder_pose.state_dict(),
-                        'optimizer_encoder_shape_state_dict': self.optimizer_encoder_shape.state_dict(),},
+                        'optimizer_encoder_shape_state_dict': self.optimizer_encoder_shape.state_dict(),
+                        'optimizer_encoder_camera_state_dict': self.optimizer_encoder_camera.state_dict(),},
                        path)
 
     def train(self, epochs):
@@ -113,10 +118,16 @@ class VoxelTrainer(object):
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict = self.train_step(batch, epoch,args)
+                loss_dict,canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb , canonical_rotated= self.train_step(batch, epoch,args)
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
                 if args.use_wandb:
                     wandb.log(loss_values)
+                    if canonical_mask_gt is not None:
+                        wandb.log({'canonical_mask_pred': wandb.Image(canonical_mask_pred)},
+                                {'canonical_mask_gt': wandb.Image(canonical_mask_gt)},
+                                {'input_rgb': wandb.Image(input_rgb)},
+                                {'canonical_rgb': wandb.Image(canonical_rgb)},
+                                {'canonical_rotated': wandb.Image(canonical_rotated)})
                 for k in loss_dict:
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0 and epoch >0:
@@ -134,9 +145,10 @@ class VoxelTrainer(object):
     def train_step(self, batch, epoch, args):
         self.optimizer_encoder_pose.zero_grad()
         self.optimizer_encoder_shape.zero_grad()
-        # self.optimizer_cameranet.zero_grad()
-        loss_dict = rgbd_loss(batch, self.encoder_shape, self.encoder_pose, 
-                        self.latent_shape, self.latent_deform,
+        self.optimizer_encoder_camera.zero_grad()
+        loss_dict, canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb , canonical_rotated = rgbd_loss(batch, self.encoder_shape, self.encoder_pose, self.encoder_camera,
+                        self.latent_shape, self.latent_deform, 
+                        self.decoder_shape, self.decoder_deform, self.renderer,
                         device=self.device)
         loss_total = 0
         for key in loss_dict.keys():
@@ -147,16 +159,15 @@ class VoxelTrainer(object):
         if self.cfg['grad_clip'] is not None:
             torch.nn.utils.clip_grad_norm_(self.encoder_shape.parameters(), max_norm=self.cfg['grad_clip'])
             torch.nn.utils.clip_grad_norm_(self.encoder_pose.parameters(), max_norm=self.cfg['grad_clip'])
-     
+            torch.nn.utils.clip_grad_norm_(self.encoder_camera.parameters(), max_norm=self.cfg['grad_clip'])
         self.optimizer_encoder_shape.step()
         self.optimizer_encoder_pose.step()
+        self.optimizer_encoder_camera.step()
 
         loss_dict = {k: loss_dict[k].item() for k in loss_dict.keys()}
 
         loss_dict.update({'loss': loss_total.item()})
-           
-
-        return loss_dict    
+        return loss_dict  , canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb , canonical_rotated
 
 if __name__ == '__main__':       
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
@@ -196,9 +207,9 @@ if __name__ == '__main__':
     encoder_2d.to(device)
     encoder_2d.eval()
     
-    cameranet = CameraNet(feature_dim=768, hidden_dim=512)
-    cameranet.to(device)
-    cameranet.train()
+    encoder_camera = CameraEncoder()
+    encoder_camera.to(device)
+    encoder_camera.train()
     
     # load pretrained decoder 
         # shape decoder initialization
@@ -235,7 +246,7 @@ if __name__ == '__main__':
     
     trainer = VoxelTrainer(encoder_shape=encoder_shape,
                            encoder_pose=encoder_pose, encoder_2d=encoder_2d,
-                            cameranet=cameranet, trainloader=trainloader,
+                            encoder_camera=encoder_camera, trainloader=trainloader,
                             decoder_shape=decoder_shape, decoder_deform=decoder_deform,
                             latent_deform=lat_deform_all, latent_shape=lat_idx_all,
                             generator=generator, 

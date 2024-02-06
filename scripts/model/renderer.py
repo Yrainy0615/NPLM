@@ -40,16 +40,16 @@ class MeshRender():
             image_size=256,
             blur_radius=0.0,
             faces_per_pixel=1,)
-        self.cameras = FoVPerspectiveCameras(device=self.device, R=R, T=t)
+        cameras = FoVPerspectiveCameras(device=self.device, R=R, T=t)
         blend_params = blending.BlendParams(background_color=[255, 255, 255])
         self.renderer = MeshRenderer(
         rasterizer=MeshRasterizer(
-            cameras=self.cameras,
+            cameras=cameras,
             raster_settings=raster_settings
         ),
         shader=SoftPhongShader(
             device=self.device,
-            cameras=self.cameras,
+            cameras=cameras,
             lights=lights,
          #   blend_params=blend_params
         )
@@ -61,7 +61,7 @@ class MeshRender():
         points_per_pixel = 5
     )
         # PointsRasterizer
-        rasterizer_point = PointsRasterizer(cameras=self.cameras, raster_settings=raster_settings)
+        rasterizer_point = PointsRasterizer(cameras=cameras, raster_settings=raster_settings)
         self.point_renderer = PointsRenderer(
             rasterizer=rasterizer_point,
             compositor=AlphaCompositor(background_color=(0,0,0))
@@ -77,7 +77,7 @@ class MeshRender():
     
     def get_mask(self, mesh, camera= None):
         if camera is not None:
-            renderer.cameras = camera
+            self.renderer.cameras = camera
         fragments = self.renderer.rasterizer(mesh)
         mask = fragments.zbuf > 0
         mask = mask.detach().cpu().float().squeeze().numpy()
