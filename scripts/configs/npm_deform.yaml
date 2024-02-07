@@ -1,0 +1,43 @@
+shape_decoder:
+  decoder_lat_dim: 512
+  decoder_hidden_dim: 1024
+  decoder_out_dim: 1
+  decoder_nlayers: 8
+  use_mapping: True
+
+deform_decoder:
+  decoder_hidden_dim: 1024
+  decoder_lat_dim: 512
+  decoder_nlayers: 8
+  decoder_out_dim: 3
+  use_mapping: False
+
+training:
+  save_name: exp-deforamtion
+  save_path: checkpoints/deform
+  train_color: 1000
+  use_nce: False
+  use_distance: True
+  batch_size: 64
+  ckpt_interval: 50
+  ckpt_vis: 1000
+  grad_clip: 0.025
+  grad_clip_lat: 0.025
+  npoints_decoder: 2000
+  weight_decay: 0.02
+  lambdas:
+    corresp: 100.0
+    loss_distance: 1
+    lat_reg: 5.0e-05
+    loss_reg_zero: 0.0
+  lr: 0.0001
+  lr_decay_factor: 0.2
+  lr_decay_factor_lat: 0.2
+  lr_decay_interval: 1000
+  lr_decay_interval_lat: 1000
+  lr_lat: 0.0005
+  npoints_decoder: 1000
+  shape_ckpt: CHECKPOINT_EPOCH
+  shape_exp_name: SHAPE_EXP_NAME
+  sigma_near: 0.01
+  weight_decay: 1.0e-05

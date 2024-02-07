@@ -63,7 +63,7 @@ if __name__ == "__main__":
                          d_in_spatial=3,
                          udf_type='sdf')
     
-    checkpoint_shape = torch.load('checkpoints/3dShape/exp-sdf3d__2500.tar')
+    checkpoint_shape = torch.load('checkpoints/3dShape/latest_3d_0126.tar')
     lat_idx_all_3d = checkpoint_shape['latent_idx_state_dict']['weight']
     decoder_shape_3d.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape_3d.eval()
@@ -78,8 +78,12 @@ if __name__ == "__main__":
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
+    
     checkpoint_deform = torch.load('checkpoints/deform/exp-deform-dis__10000.tar')
-    lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
+    lat_deform_new = checkpoint_deform['latent_deform_state_dict']['weight']
+    checkpoint_deform_old = torch.load('checkpoints/deform/deform_old.tar')
+    lat_deform_old = checkpoint_deform_old['latent_deform_state_dict']['weight']
+    lat_deform_all = torch.cat((lat_deform_new, lat_deform_old), dim=0)
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
     decoder_deform.to(device)

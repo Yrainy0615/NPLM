@@ -133,7 +133,7 @@ def compute_sdf_3d_loss(batch, decoder, latent_idx,device):
                     'lat_reg':lat_mag.mean()}
     return ret_dict
 
-def compute_loss_corresp_forward(batch, decoder, decoder_shape, latent_deform, latent_shape, device, cfg):
+def compute_loss_corresp_forward(batch, decoder, latent_deform, device, cfg):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     glob_cond = latent_deform(batch['idx'].to(device))
     label = batch['label'].to(device)

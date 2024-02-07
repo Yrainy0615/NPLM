@@ -20,17 +20,15 @@ import random
 from scripts.model.reconstruction import latent_to_mesh, deform_mesh, save_mesh_image_with_camera
 
 class DeformTrainer(object):
-    def __init__(self, decoder, decoder_shape,cfg, 
+    def __init__(self, decoder,cfg, 
                  trainset,trainloader,device, args):
         self.decoder = decoder
         self.cfg = cfg['training']
-        self.decoder_shape = decoder_shape
-        self.latent_shape = self.init_shape_state(self.cfg['shape_checkpoints'])
-        print('shape latent  loaded with dims:{} '.format(self.latent_shape.shape))
+
         self.latent_shape.requires_grad_  = False
         self.trainset = trainset
         self.args = args
-        self.latent_deform = torch.nn.Embedding(len(trainset), 200, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_deform = torch.nn.Embedding(len(trainset), 512, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(self.latent_deform.weight.data, 0.0, 0.01)
         print('deform latent loaded with dims:{}'.format(self.latent_deform.weight.data.shape))
         
@@ -113,17 +111,24 @@ class DeformTrainer(object):
             # for param_group in self.optimizer_lat_val.param_groups:
             #     param_group["lr"] = lr 
         
-    def save_checkpoint(self, epoch, save_name):
-        path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
+    def save_checkpoint(self, epoch,save_name):
+        if not os.path.exists(self.checkpoint_path):
+            os.makedirs(self.checkpoint_path)
+        if save_name == 'latest':
+            path = self.checkpoint_path + '/latest.tar'
+            torch.save({'epoch': epoch,
+                        'decoder_state_dict': self.decoder.state_dict(),
+                        'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
+                        'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),   },
+                       path)
+       
+        else:
+            path = self.checkpoint_path + '/{}__{}.tar'.format(save_name,epoch)
         if not os.path.exists(path):
              torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
-                      #  'optimizer_lat_val_state_dict': self.optimizer_lat_val.state_dict(),
-                        'latent_deform_state_dict': self.latent_deform.state_dict(),
-                  
-                       # 'latent_codes_val_state_dict': self.latent_codes_val.state_dict()
                        },
                        path)
        
@@ -175,13 +180,8 @@ class DeformTrainer(object):
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0 and epoch >0:
                 self.save_checkpoint(epoch,self.cfg['save_name'])
-            # if epoch % 10 ==0:
-            #     lat_shape = self.latent_shape.weight[random.randint(0,6)].to(self.device)
-            #     mesh_mc, _ = latent_to_mesh(self.decoder_shape, lat_shape,self.device,size=64)
-            #     lat_def = self.latent_deform.weight[random.randint(0,len(self.trainset)-1)].to(self.device)
-            #     deform = deform_mesh(mesh_mc, self.decoder, lat_rep=lat_def,lat_rep_shape=lat_shape )
-            #     img_deform= save_mesh_image_with_camera(deform.vertices, deform.faces)
-            #     wandb.log({'deform': wandb.Image(img_deform)})
+            self.save_checkpoint(epoch, save_name='latest')
+
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():
                 sum_loss_dict[k] /= n_train
@@ -214,13 +214,6 @@ if __name__ == "__main__":
                         root_dir=CFG['training']['root_dir'])
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
 
-    # decoder initialization
-    decoder_shape = UDFNetwork(d_in=CFG['shape_decoder']['decoder_lat_dim'],
-                         d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
-                         d_out=CFG['shape_decoder']['decoder_out_dim'],
-                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
-                         d_in_spatial=2,
-                         udf_type='sdf')
 
     decoder = UDFNetwork(d_in=CFG['deform_decoder']['decoder_lat_dim'],
                          d_hidden=CFG['deform_decoder']['decoder_hidden_dim'],
@@ -233,12 +226,10 @@ if __name__ == "__main__":
    
 
     decoder = decoder.to(device)
-    decoder_shape = decoder_shape.to(device)
     
     # trainer initialization
     trainer = DeformTrainer(
                             decoder=decoder,
-                            decoder_shape=decoder_shape,
                             cfg=CFG, 
                             trainset=trainset,trainloader=trainloader, 
                             device=device,

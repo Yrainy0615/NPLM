@@ -1,6 +1,5 @@
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-from .DataManager import LeafScanManager, LeafImageManger
 from typing import Literal
 import os
 import yaml
@@ -26,15 +25,15 @@ def uniform_ball(n_points, rad=1.0):
 class LeafDeformDataset(Dataset):
     def __init__(self,
                  n_supervision_points_face: int,
-                 root_dir: str):
+                 ):
         self.n_supervision_points_face = n_supervision_points_face
-        self.root_dir = root_dir    
-        self.all_sample = [f for f in os.listdir(root_dir) if f.endswith('.npy')]
-        self.all_sample  = sorted(self.all_sample)
-        label_file = os.path.join(root_dir, 'maple_label.json')
-        with open(label_file, 'r') as f:
-            self.label = json.load(f)
-
+        self.all_sample = []
+        self.root_dir = 'dataset/ScanData'
+        for dirpath, dirnames, filenames in os.walk(self.root_dir):
+            for filename in filenames:
+                if filename.endswith('.npy') and not 'neutral' in filename:
+                    self.all_sample.append(os.path.join(dirpath, filename))
+        self.all_sample.sort()
     def __len__(self):
         return len(self.all_sample)     
     
@@ -42,8 +41,7 @@ class LeafDeformDataset(Dataset):
         filename = self.all_sample[index]
         parts = filename.split('_')
         name = '_'.join(parts[:2])
-        label = self.label[name]
-        trainfile = np.load(os.path.join(self.root_dir,self.all_sample[index]), allow_pickle=True)
+        trainfile = np.load(self.all_sample[index], allow_pickle=True)
         valid = np.logical_not(np.any(np.isnan(trainfile), axis=-1))
         point_corresp = trainfile[valid,:].astype(np.float32)
         # subsample points for supervision
@@ -56,7 +54,6 @@ class LeafDeformDataset(Dataset):
             'points_neutral': neutral,
             'points_posed': pose,
             'idx': np.array([index]),
-            'label':label
         }
 
 
@@ -191,13 +188,7 @@ class LeafSDF3dDataset(Dataset):
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
-    dataset = LeafDeformDataset(mode='train',
-                                n_supervision_points_face=100,
-                                n_supervision_points_non_face=0,
-                                batch_size=1,
-                                sigma_near=0.01,
-                                root_dir=CFG['dataset']['root_dir'])                                                            
-    
-    dataloader = DataLoader(dataset, batch_size=1,shuffle=False, num_workers=2)
+    dataset = LeafDeformDataset(n_supervision_points_face=2000)
+    dataloader = DataLoader(dataset, batch_size=2,shuffle=False, num_workers=2)
     batch = next(iter(dataloader))
    
