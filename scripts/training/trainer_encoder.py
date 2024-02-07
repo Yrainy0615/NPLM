@@ -113,17 +113,12 @@ class VoxelTrainer(object):
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
                 loss_dict,canonical_mask_pred, canonical_mask_gt= self.train_step(batch, epoch,args)
-                combined_image = Image.new('L', (canonical_mask_pred.shape[2] * 2, canonical_mask_pred.shape[1]))
-                gt_image = Image.fromarray(canonical_mask_gt[0])  # 假设是单通道的，取第0个通道
-                pred_image = Image.fromarray(canonical_mask_pred[0])
-
-                combined_image.paste(gt_image, (0, 0))
-                combined_image.paste(pred_image, (gt_image.width, 0))
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
                 if args.use_wandb:
                     wandb.log(loss_values)
                     if canonical_mask_gt is not None:
-                        wandb.log({'mask': wandb.Image(combined_image)})
+                        wandb.log({'GT': wandb.Image(canonical_mask_gt),
+                                   'Pred': wandb.Image(canonical_mask_pred)})
                                 
                 for k in loss_dict:
                     sum_loss_dict[k] += loss_dict[k]        
@@ -164,7 +159,7 @@ class VoxelTrainer(object):
         loss_dict = {k: loss_dict[k].item() for k in loss_dict.keys()}
 
         loss_dict.update({'loss': loss_total.item()})
-        return loss_dict  , canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb , canonical_rotated
+        return loss_dict  , canonical_mask_pred, canonical_mask_gt
 
 if __name__ == '__main__':       
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
