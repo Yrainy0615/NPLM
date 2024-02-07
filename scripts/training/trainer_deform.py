@@ -203,7 +203,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    config = 'NPLM/scripts/configs/npm_def.yaml'
+    config = 'NPLM/scripts/configs/npm_deform.yaml'
     CFG = yaml.safe_load(open(config, 'r'))
     if args.use_wandb:
         wandb.init(project='NPLM', name =args.wandb)
