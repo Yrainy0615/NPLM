@@ -16,6 +16,7 @@ from transformers import ViTModel
 from scripts.model.generator import Generator
 from scripts.model.renderer import MeshRender
 from scripts.model.inference_encoder import ShapeEncoder, PoseEncoder, CameraEncoder
+from PIL import Image
 
 class VoxelTrainer(object):
     def __init__(self, encoder_shape, encoder_pose, encoder_2d,
@@ -74,13 +75,6 @@ class VoxelTrainer(object):
                 param_group["lr"] = lr
 
 
-            # if self.cfg['lr_decay_interval_lat'] is not None and epoch % self.cfg['lr_decay_interval_lat'] == 0:
-            #     decay_steps = int(epoch/self.cfg['lr_decay_interval_lat'])
-            #     lr = self.cfg['lr_lat'] * self.cfg['lr_decay_factor_lat']**decay_steps
-            #     print('Reducting LR for latent codes to {}'.format(lr))
-            #     for param_group in self.generator.param_groups:
-            #         param_group["lr"] = lr
-    
     def save_checkpoint(self, epoch,save_name):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
@@ -118,16 +112,19 @@ class VoxelTrainer(object):
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict,canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb , canonical_rotated= self.train_step(batch, epoch,args)
+                loss_dict,canonical_mask_pred, canonical_mask_gt= self.train_step(batch, epoch,args)
+                combined_image = Image.new('L', (canonical_mask_pred.shape[2] * 2, canonical_mask_pred.shape[1]))
+                gt_image = Image.fromarray(canonical_mask_gt[0])  # 假设是单通道的，取第0个通道
+                pred_image = Image.fromarray(canonical_mask_pred[0])
+
+                combined_image.paste(gt_image, (0, 0))
+                combined_image.paste(pred_image, (gt_image.width, 0))
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
                 if args.use_wandb:
                     wandb.log(loss_values)
                     if canonical_mask_gt is not None:
-                        wandb.log({'canonical_mask_pred': wandb.Image(canonical_mask_pred)},
-                                {'canonical_mask_gt': wandb.Image(canonical_mask_gt)},
-                                {'input_rgb': wandb.Image(input_rgb)},
-                                {'canonical_rgb': wandb.Image(canonical_rgb)},
-                                {'canonical_rotated': wandb.Image(canonical_rotated)})
+                        wandb.log({'mask': wandb.Image(combined_image)})
+                                
                 for k in loss_dict:
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0 and epoch >0:
@@ -146,7 +143,7 @@ class VoxelTrainer(object):
         self.optimizer_encoder_pose.zero_grad()
         self.optimizer_encoder_shape.zero_grad()
         self.optimizer_encoder_camera.zero_grad()
-        loss_dict, canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb , canonical_rotated = rgbd_loss(batch, self.encoder_shape, self.encoder_pose, self.encoder_camera,
+        loss_dict, canonical_mask_pred, canonical_mask_gt = rgbd_loss(batch, self.encoder_shape, self.encoder_pose, self.encoder_camera,
                         self.latent_shape, self.latent_deform, 
                         self.decoder_shape, self.decoder_deform, self.renderer,
                         device=self.device)
@@ -188,30 +185,7 @@ if __name__ == '__main__':
         wandb.init(project='NPLM', name =args.wandb)
         wandb.config.update(CFG)
     
-    # dataset
-    trainset = Voxel_dataset(mode='shape')
-    trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
-    print('data loaded: {} samples'.format(len(trainloader)))
-    # model initialization
-    # encoder_3d = PCAutoEncoder(point_dim=3)
-    # encoder_3d.to(device)
-    # encoder_3d.train(
-    encoder_shape  = ShapeEncoder()
-    encoder_pose = PoseEncoder()
-    encoder_shape = encoder_shape.to(device)
-    encoder_pose = encoder_pose.to(device)
-    encoder_shape.train()
-    encoder_pose.train()
-    
-    encoder_2d = ViTModel.from_pretrained('facebook/dino-vitb16')
-    encoder_2d.to(device)
-    encoder_2d.eval()
-    
-    encoder_camera = CameraEncoder()
-    encoder_camera.to(device)
-    encoder_camera.train()
-    
-    # load pretrained decoder 
+        # load pretrained decoder 
         # shape decoder initialization
     decoder_shape = UDFNetwork(d_in= CFG['shape_decoder']['decoder_lat_dim'],
                          d_hidden=CFG['shape_decoder']['decoder_hidden_dim'],
@@ -240,6 +214,31 @@ if __name__ == '__main__':
     decoder_deform.eval()
     decoder_deform.to(device)
     
+    
+    # dataset
+    trainset = Voxel_dataset(mode='shape')
+    trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
+    print('data loaded: {} samples'.format(len(trainloader)))
+    # model initialization
+    # encoder_3d = PCAutoEncoder(point_dim=3)
+    # encoder_3d.to(device)
+    # encoder_3d.train(
+    encoder_shape  = ShapeEncoder(output_dim=lat_idx_all.shape[0])
+    encoder_pose = PoseEncoder(output_dim=lat_idx_all.shape[0])
+    encoder_shape = encoder_shape.to(device)
+    encoder_pose = encoder_pose.to(device)
+    encoder_shape.train()
+    encoder_pose.train()
+    
+    encoder_2d = ViTModel.from_pretrained('facebook/dino-vitb16')
+    encoder_2d.to(device)
+    encoder_2d.eval()
+    
+    encoder_camera = CameraEncoder()
+    encoder_camera.to(device)
+    encoder_camera.train()
+    
+
     # load generator
     generator = Generator(resolution=256)
     generator.to(device)

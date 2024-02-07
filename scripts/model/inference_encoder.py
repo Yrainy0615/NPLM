@@ -6,7 +6,7 @@ from .custom_layers import make_conv, ResBlock
 
 class ShapeEncoder(nn.Module):
 
-    def __init__(self, code_dim=512, res=128):
+    def __init__(self, code_dim=512, res=128, output_dim=None):
         super(ShapeEncoder, self).__init__()
 
         fn_0 = 1
@@ -46,7 +46,10 @@ class ShapeEncoder(nn.Module):
         else:
             exit()
         
-        self.fc_out = nn.Conv1d(code_dim * 2, code_dim, 1)
+        if output_dim is not None:
+            self.fc_out = nn.Conv1d(code_dim * 2, output_dim, 1)
+        else:
+            self.fc_out = nn.Conv1d(code_dim * 2, code_dim, 1)
         self.actvn  = nn.LeakyReLU()
 
         for m in self.modules():
@@ -81,12 +84,14 @@ class ShapeEncoder(nn.Module):
 
         y = self.actvn(self.fc_0(y))
         y = self.fc_out(y)
+        # softmax 
+        y = F.softmax(y, dim=1)
         y = y.permute(0, -1, 1)
         return y
 
 
 class PoseEncoder(nn.Module):
-    def __init__(self, code_dim=512, res=128):
+    def __init__(self, code_dim=512, res=128, output_dim=None):
         super(PoseEncoder, self).__init__()
 
         fn_0 = 1
@@ -125,8 +130,10 @@ class PoseEncoder(nn.Module):
         
         else:
             exit()
-        
-        self.fc_out = nn.Conv1d(code_dim * 2, code_dim, 1)
+        if output_dim is not None:
+            self.fc_out = nn.Conv1d(code_dim * 2, output_dim, 1)
+        else:
+            self.fc_out = nn.Conv1d(code_dim * 2, code_dim, 1)
         self.actvn  = nn.LeakyReLU()
 
         for m in self.modules():
@@ -161,7 +168,9 @@ class PoseEncoder(nn.Module):
 
         y = self.actvn(self.fc_0(y))
         y = self.fc_out(y)
+        y= F.softmax(y, dim=1)
         y = y.permute(0, -1, 1)
+        
         return y
 
 

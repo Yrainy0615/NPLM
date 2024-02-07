@@ -218,6 +218,7 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     # load data
     voxel = batch_cuda['voxel']
+    loss_function = torch.nn.CrossEntropyLoss()
     # points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
     deform_code_gt = latent_deform[(batch_cuda['deform_index']).long()].to(device)
     shape_code_gt = latent_shape[batch_cuda['shape_index'].long()].to(device)
@@ -226,11 +227,12 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
     latent_shape_pred = encoder_shape(voxel)
     latent_deform_pred = encoder_pose(voxel)
     camera_pose_pred = encoder_camera(voxel)
-    loss_deform_code = F.mse_loss(latent_deform_pred.squeeze(), deform_code_gt)
-    loss_shape_code = F.mse_loss(latent_shape_pred.squeeze(), shape_code_gt)
+    loss_shape_code = loss_function(latent_shape_pred.squeeze(), batch_cuda['shape_index'].to(torch.int64))
+    loss_deform_code = loss_function(latent_deform_pred.squeeze(), batch_cuda['deform_index'].to(torch.int64))
+    shape_index_pred = torch.argmax(latent_shape_pred[0], dim=1)
     loss_camera_pose = F.mse_loss(camera_pose_pred.squeeze(), camera_pose_gt)
     # test one mesh 
-    canonical_pred = latent_to_mesh(decoder_shape, latent_shape_pred[0], device)
+    canonical_pred = latent_to_mesh(decoder_shape, latent_shape[shape_index_pred], device)
     if canonical_pred is None:
         canonical_mask_pred =None
         canonical_mask_gt =None
@@ -254,7 +256,7 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
         'loss_latent_deform': loss_deform_code,
         'loss_camera_pose': loss_camera_pose,
     }
-    return loss_dict, canonical_mask_pred, canonical_mask_gt, input_rgb, canonical_rgb, canonical_rotated
+    return loss_dict, canonical_mask_pred, canonical_mask_gt 
     # forward pass for camera pose and texture
 
 def texture_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg, 
