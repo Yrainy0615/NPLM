@@ -18,7 +18,7 @@ training:
   train_color: 1000
   use_nce: False
   use_distance: True
-  batch_size: 64
+  batch_size: 128
   ckpt_interval: 50
   ckpt_vis: 1000
   grad_clip: 0.025

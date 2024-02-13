@@ -85,7 +85,7 @@ class ShapeEncoder(nn.Module):
         y = self.actvn(self.fc_0(y))
         y = self.fc_out(y)
         # softmax 
-        y = F.softmax(y, dim=1)
+  #      y = F.softmax(y, dim=1)
         y = y.permute(0, -1, 1)
         return y
 
@@ -168,7 +168,7 @@ class PoseEncoder(nn.Module):
 
         y = self.actvn(self.fc_0(y))
         y = self.fc_out(y)
-        y= F.softmax(y, dim=1)
+     #   y= F.softmax(y, dim=1)
         y = y.permute(0, -1, 1)
         
         return y

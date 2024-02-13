@@ -24,8 +24,6 @@ class DeformTrainer(object):
                  trainset,trainloader,device, args):
         self.decoder = decoder
         self.cfg = cfg['training']
-
-        self.latent_shape.requires_grad_  = False
         self.trainset = trainset
         self.args = args
         self.latent_deform = torch.nn.Embedding(len(trainset), 512, max_norm = 1.0, sparse=True, device = device).float()
@@ -40,16 +38,9 @@ class DeformTrainer(object):
         self.optimizer_latent = optim.SparseAdam(params= list(self.latent_deform.parameters()), lr=self.cfg['lr_lat'])
         self.lr = self.cfg['lr']
         self.lr_lat = self.cfg['lr_lat']
+        self.checkpoint_path = self.cfg['save_path']
+        
 
-        self.checkpoint_path = self.cfg['shape_checkpoints']
-        
-        
-    def init_shape_state(self, path):
-        checkpoint = torch.load(path)
-        self.decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
-        lat_shape = checkpoint['latent_idx_state_dict']['weight']
-        print('Loaded checkpoint from: {}'.format(path))
-        return lat_shape
         
     def load_checkpoint(self):
         checkpoints = glob(self.checkpoint_path+'/*')
@@ -119,7 +110,8 @@ class DeformTrainer(object):
             torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
-                        'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),   },
+                        'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),  
+                        'latent_deform_state_dict': self.latent_deform.state_dict(),},
                        path)
        
         else:
@@ -129,6 +121,7 @@ class DeformTrainer(object):
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
+                        'latent_deform_state_dict': self.latent_deform.state_dict(),
                        },
                        path)
        
@@ -136,9 +129,9 @@ class DeformTrainer(object):
         self.decoder.train()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
-        loss_dict = compute_loss_corresp_forward(batch, decoder_shape=self.decoder_shape,
+        loss_dict = compute_loss_corresp_forward(batch,
                                 decoder=self.decoder, device=self.device,
-                                latent_deform=self.latent_deform, latent_shape=self.latent_shape,cfg = self.cfg)
+                                latent_deform=self.latent_deform,cfg = self.cfg)
         loss_total = 0
         for key in loss_dict.keys():
             loss_total += self.cfg['lambdas'][key] * loss_dict[key]
@@ -198,6 +191,7 @@ if __name__ == "__main__":
     parser.add_argument('--wandb', type=str, default='deform', help='run name of wandb')
     parser.add_argument('--output', type=str, default='deform', help='output directory')
     parser.add_argument('--use_wandb', action='store_true', help='use wandb')
+    parser.add_argument('--continue_train', action='store_true', help='continue training from latest checkpoint')
     # setting
 
     args = parser.parse_args()
@@ -210,8 +204,7 @@ if __name__ == "__main__":
     
     # dataset & dataloader
     trainset = LeafDeformDataset(
-                        n_supervision_points_face=CFG['training']['npoints_decoder'],
-                        root_dir=CFG['training']['root_dir'])
+                        n_supervision_points_face=CFG['training']['npoints_decoder'])
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
 
 

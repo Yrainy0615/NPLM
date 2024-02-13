@@ -15,7 +15,7 @@ deform_decoder:
 training:
   shape_checkpoints: checkpoints/2dShape/exp-sdf2d__1000.tar
   root_dir: dataset/ScanData/deformation
-  save_name: exp-inference
+  save_name: exp-inference-rot
   save_path: checkpoints/inference
   train_color: 1000
   use_nce: False
@@ -36,7 +36,7 @@ training:
   lr_cam: 0.001
   lr_decay_factor: 0.5
   lr_decay_factor_lat: 0.2
-  lr_decay_interval: 2
+  lr_decay_interval: 10
   lr_decay_interval_lat: 10
   lr_lat: 0.005
   npoints_decoder: 1000

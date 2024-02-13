@@ -51,7 +51,7 @@ class MeshRender():
             device=self.device,
             cameras=cameras,
             lights=lights,
-         #   blend_params=blend_params
+            blend_params=blend_params
         )
     )
         

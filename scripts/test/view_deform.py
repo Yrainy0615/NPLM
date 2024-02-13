@@ -80,29 +80,15 @@ if __name__ == "__main__":
                          use_mapping=CFG['deform_decoder']['use_mapping'])
     
     checkpoint_deform = torch.load('checkpoints/deform/exp-deform-dis__10000.tar')
-    lat_deform_new = checkpoint_deform['latent_deform_state_dict']['weight']
-    checkpoint_deform_old = torch.load('checkpoints/deform/deform_old.tar')
-    lat_deform_old = checkpoint_deform_old['latent_deform_state_dict']['weight']
-    lat_deform_all = torch.cat((lat_deform_new, lat_deform_old), dim=0)
+    lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
     decoder_deform.to(device)
 
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
-    mini = [-.95, -.95, -.95]
-    maxi = [0.95, 0.95, 0.95]
-    grid_points = create_grid_points_from_bounds(mini, maxi, 128)
-    grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
-    grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
-    # lat_def_all = checkpoint_deform['latent_deform_state_dict']['weight']
-    # logits = get_logits(decoder_shape, lat_idx, grid_points=grid_points,nbatch_points=2000)
-    # mesh = mesh_from_logits(logits, mini, maxi,256)
-
-    
     mode =   'deform'
-
-            
+ 
     if mode=='3dshape':
         # random 50 index from latent space
         ids = random.sample(range(0, lat_idx_all_3d.shape[0]), 50)
@@ -116,21 +102,24 @@ if __name__ == "__main__":
                 
 
 if mode == 'deform':
-    mesh_root = 'dataset/Mesh_colored'
-    all_mesh = os.listdir(mesh_root)
-    for mesh_file in all_mesh:
-            ids = random.sample(range(0, lat_deform_all.shape[0]), 20)
-            mesh = trimesh.load(os.path.join(mesh_root, mesh_file))
-            print('>>>>> Loading {} >>>>>'.format(mesh_file))
-            for id in ids:
-                latent = lat_deform_all[id]
-                mesh_deform = deform_mesh(mesh, decoder_deform, latent)
-                mesh_deform.visual.vertex_colors = mesh.visual.vertex_colors
-                save_name = mesh_file.split('.')[0] + '_d{}.obj'.format(id)
-                save_file = os.path.join('dataset/Mesh_colored/deformed', save_name)
-                mesh_deform.export(save_file, include_color=True)
-                print('{} saved'.format(save_file))
+    save_dir = 'results/viz_space'
+    for i in range(lat_idx_all_3d.shape[0]):
+        latent_shape = lat_idx_all_3d[i]
+        mesh = latent_to_mesh(decoder_shape_3d,latent_shape , device)
+        save_name = '{}.obj'.format(i)
+        mesh.export(os.path.join(save_dir, save_name))
+        print('mesh {} saved'.format(i))
+        index = random.sample(range(0, lat_deform_all.shape[0]), 5)
+        for j in index:
+            latent_deform = lat_deform_all[j]
+            mesh_deform = deform_mesh(mesh, decoder_deform, latent_deform)
+            save_name_deform = '{}_{}.obj'.format(i, j)
+            mesh_deform.export(os.path.join(save_dir, save_name_deform))
+            print('deformed mesh {} saved'.format(save_name_deform))
             
+    
+
+
 
 
                 

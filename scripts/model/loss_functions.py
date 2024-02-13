@@ -136,9 +136,6 @@ def compute_sdf_3d_loss(batch, decoder, latent_idx,device):
 def compute_loss_corresp_forward(batch, decoder, latent_deform, device, cfg):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     glob_cond = latent_deform(batch['idx'].to(device))
-    label = batch['label'].to(device)
-   # glob_cond = torch.cat([glob_cond_shape.unsqueeze(1), glob_cond_pose], dim=-1)
-
     points_neutral = batch_cuda['points_neutral'].clone().detach().requires_grad_()
 
     cond = glob_cond.repeat(1, points_neutral.shape[1], 1)
@@ -169,7 +166,6 @@ def compute_loss_corresp_forward(batch, decoder, latent_deform, device, cfg):
     loss_reg_zero = (delta**2).mean()
     return {'corresp': loss_corresp.mean(),
             'lat_reg': lat_mag.mean(),
-            'loss_nce': loss_infonce,
             'loss_reg_zero': loss_reg_zero,
             'loss_distance': loss_distance.mean()}
 
@@ -217,22 +213,19 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
               renderer, device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     # load data
-    voxel = batch_cuda['voxel']
+    occupancy_grid = batch_cuda['occupancy_grid']
     loss_function = torch.nn.CrossEntropyLoss()
     # points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
-    deform_code_gt = latent_deform[(batch_cuda['deform_index']).long()].to(device)
-    shape_code_gt = latent_shape[batch_cuda['shape_index'].long()].to(device)
-    camera_pose_gt = batch_cuda['camera_pose'].to(device)
+    deform_code_gt = latent_deform[(batch_cuda['deform_idx']).long()].to(device)
+    shape_code_gt = latent_shape[batch_cuda['shape_idx'].long()].to(device)
     # forward pass for shape and deformation
-    latent_shape_pred = encoder_shape(voxel)
-    latent_deform_pred = encoder_pose(voxel)
-    camera_pose_pred = encoder_camera(voxel)
-    loss_shape_code = loss_function(latent_shape_pred.squeeze(), batch_cuda['shape_index'].to(torch.int64))
-    loss_deform_code = loss_function(latent_deform_pred.squeeze(), batch_cuda['deform_index'].to(torch.int64))
-    shape_index_pred = torch.argmax(latent_shape_pred[0], dim=1)
-    loss_camera_pose = F.mse_loss(camera_pose_pred.squeeze(), camera_pose_gt)
+    latent_shape_pred = encoder_shape(occupancy_grid)
+    latent_deform_pred = encoder_pose(occupancy_grid)
+    loss_shape_code = F.mse_loss(latent_shape_pred.squeeze(), shape_code_gt)
+    loss_deform_code = F.mse_loss(latent_deform_pred.squeeze(), deform_code_gt)
     # test one mesh 
-    canonical_pred = latent_to_mesh(decoder_shape, latent_shape[shape_index_pred], device)
+    random_index= np.random.randint(0,30)
+    canonical_pred = latent_to_mesh(decoder_shape, latent_shape_pred[random_index], device)
     if canonical_pred is None:
         canonical_mask_pred =None
         canonical_mask_gt =None
@@ -240,21 +233,20 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
         canonical_rgb = None
         canonical_rotated = None
     else:
-        canonical_gt = latent_to_mesh(decoder_shape, shape_code_gt[0], device)
+        canonical_gt = latent_to_mesh(decoder_shape, shape_code_gt[random_index], device)
         canonical_pred_tensor = Meshes(verts=torch.tensor(canonical_pred.vertices).float().unsqueeze(0), faces=torch.tensor(canonical_pred.faces).float().unsqueeze(0))    
         canonical_gt_tensor = Meshes(verts=torch.tensor(canonical_gt.vertices).float().unsqueeze(0), faces=torch.tensor(canonical_gt.faces).float().unsqueeze(0))
         canonical_mask_pred = renderer.get_mask(canonical_pred_tensor.to(device))
         canonical_mask_gt = renderer.get_mask(canonical_gt_tensor.to(device))
-        input_rgb = batch_cuda['rgb'][0].cpu().numpy()
-        canonical_rgb = batch_cuda['canonical_rgb'][0].cpu().numpy()
-        R,t = look_at_view_transform(2, azim=torch.rad2deg(camera_pose_pred[0].squeeze()[0]), elev=torch.rad2deg(camera_pose_pred[0].squeeze()[1]))
-        camera = FoVPerspectiveCameras(device=device, R=R, T=t)
-        canonical_rotated = renderer.get_mask(canonical_gt_tensor.to(device), camera)
+        # input_rgb = batch_cuda['rgb'][0].cpu().numpy()
+        # canonical_rgb = batch_cuda['canonical_rgb'][0].cpu().numpy()
+        # # R,t = look_at_view_transform(2, azim=torch.rad2deg(camera_pose_pred[0].squeeze()[0]), elev=torch.rad2deg(camera_pose_pred[0].squeeze()[1]))
+        # camera = FoVPerspectiveCameras(device=device, R=R, T=t)
+        # canonical_rotated = renderer.get_mask(canonical_gt_tensor.to(device), camera)
     
     loss_dict = {
         'loss_latent_shape': loss_shape_code,
         'loss_latent_deform': loss_deform_code,
-        'loss_camera_pose': loss_camera_pose,
     }
     return loss_dict, canonical_mask_pred, canonical_mask_gt 
     # forward pass for camera pose and texture
