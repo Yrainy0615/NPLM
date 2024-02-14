@@ -111,7 +111,7 @@ class Predictor(object):
         optimizer_deform = optim.Adam([latent_deform_init], lr=1e-3)
         img_nps = []
         deform_nps = []
-        for i in range(100):
+        for i in range(1):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
@@ -388,8 +388,7 @@ if __name__ == '__main__':
         model_dir = os.path.join(root, 'model')
         annotation_dir = os.path.join(root, 'annotation')
         all_plants  = [f for f in os.listdir(annotation_dir) ]
-        instance_dir = os.path.join(annotation_dir, all_plants[0], 'Annotations')
-        
+        instance_dir = '/home/yang/projects/parametric-leaf/dataset/soybean/annotation/20180619_HN48/Annotations'
         for i,file in enumerate(os.listdir(instance_dir)):
             plant_ponts = []
             if file.endswith(".txt") and 'leaf' in file:
@@ -420,6 +419,7 @@ if __name__ == '__main__':
                 R_w2c = find_rotation_matrix(np.array([x_axis_canonical,  y_axis_canonical,z_axis_canonical]), np.array([x_axis,  y_axis,z_axis]))
                 R_c2w  = np.linalg.inv(R_w2c)
                 point_cloud_canonical= np.matmul(new_points, R_w2c.T)
+                # visualize_points_and_axes(point_cloud_canonical,origin=np.mean(point_cloud_canonical, axis=0), x_axis=x_axis_canonical, y_axis=y_axis_canonical, z_axis=z_axis_canonical)
                 origin_canonical = trimesh.points.PointCloud(point_cloud_canonical)
                 origin_canonical.export(f'origin_canonical_pt{i}.ply')
 

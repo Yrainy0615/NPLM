@@ -37,14 +37,14 @@ def normalize_verts(verts):
       vertices = (verts - center) *scale
       return vertices
 
-def visualize_points_and_axes(points, points2 , origin, x_axis,y_axis, z_axis):
+def visualize_points_and_axes(points , origin, x_axis,y_axis, z_axis):
     """
     visualize the point cloud and the axes
     """
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(points[:, 0], points[:, 1], points[:, 2], c='b', marker='o')
-    ax.scatter(points2[:, 0], points2[:, 1], points2[:, 2], c='g', marker='o')
+    # ax.scatter(points2[:, 0], points2[:, 1], points2[:, 2], c='g', marker='o')
     # ax.scatter(points3[:, 0], points3[:, 1], points3[:, 2], c='r', marker='o')
 
     ax.quiver(origin[0], origin[1], origin[2], x_axis[0], x_axis[1], x_axis[2], color='r')
