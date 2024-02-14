@@ -17,7 +17,6 @@ from collections import defaultdict
 from PIL import Image
 from transformers import ViTImageProcessor
 from pytorch3d.structures import Pointclouds
-from scripts.model.point_encoder import PCAutoEncoder
 from pytorch3d.datasets import collate_batched_meshes
 import trimesh
 from scipy.spatial import cKDTree as KDTree
@@ -89,7 +88,17 @@ def normalize_verts(verts):
       vertices = (verts - center) *scale
       return vertices
 
-def rgbd_to_voxel(rgb,depth, grid_points):
+def points_to_occ(points):
+    points_norm = normalize_verts(points)
+    grid_points = create_grid_points_from_bounds([-1,-1,-1],[1,1,1],128)
+    kdtree = KDTree(grid_points)
+    _, idx = kdtree.query(points_norm)
+    occupancies = np.zeros(len(grid_points), dtype=np.int8)
+    occupancies[idx] = 1
+    occupancy_grid = np.reshape(occupancies, (128,) * 3)
+    return occupancy_grid
+
+def rgbd_to_voxel(rgb,depth,grid_points):
     depth_scale = 1000
     kdtree = KDTree(grid_points)
     if type(rgb) ==str:
@@ -122,13 +131,13 @@ def rgbd_to_voxel(rgb,depth, grid_points):
     occupancies = np.zeros(len(grid_points), dtype=np.int8)
     _, idx = kdtree.query(pcd_points)
     occupancies[idx] = 1
-
+    
     # compressed_occupancies = np.packbits(occupancies)
     voxels = np.reshape(occupancies, (128,) * 3)
     # vertices, triangles,_,_ = skimage.measure.marching_cubes(voxels, 0.015)
     # mesh = trimesh.Trimesh(vertices, triangles)
     # mesh.export('test.obj')
-    return voxels
+    return voxels, pcd_points
 
 class Voxel_dataset(Dataset):
     def __init__(self, mode):

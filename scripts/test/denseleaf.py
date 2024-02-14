@@ -139,7 +139,7 @@ if __name__ == "__main__":
     generator.load_state_dict(checkpint_texture['generator_state_dict'])
     
     renderer = MeshRender(device=device)
-    
+    predictor = Predictor(encoder_3d, encoder_2d, processor, cameranet, decoder_shape, decoder_deform, generator, renderer, device)
     # create grid points 
     mini = [-.95, -.95, -.95]
     maxi = [0.95, 0.95, 0.95]
@@ -190,9 +190,8 @@ if __name__ == "__main__":
         depth = depths[i]
         normal = normals[i]
         mask = mask[i]
-        points = rgbd_to_voxel(rgb=rgb, depth=depth,grid_points=grid_points)
+        occupancy_grid, points = rgbd_to_voxel(rgb=rgb, depth=depth,grid_points=grid_points)
         # predict
         
-        predict_single_leaf(points, rgb, encoder_3d, encoder_2d, processor, cameranet, 
-                            decoder_shape, decoder_deform, renderer, device)
+
     pass 
