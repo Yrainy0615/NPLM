@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 sys.path.append('NPLM')
-from scripts.dataset.rgbd_dataset import Voxel_dataset, custom_collate_fn
+from scripts.dataset.rgbd_dataset import Voxel_dataset
 from scripts.dataset.sdf_dataset import EncoderDataset
 from torch.utils.data import DataLoader
 from scripts.model.point_encoder import PCAutoEncoder, CameraNet
@@ -111,7 +111,7 @@ class Predictor(object):
         optimizer_deform = optim.Adam([latent_deform_init], lr=1e-3)
         img_nps = []
         deform_nps = []
-        for i in range(1):
+        for i in range(100):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
@@ -192,7 +192,7 @@ if __name__ == '__main__':
     # trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=2)
     trainloader = None
     # networl initialization
-    checkpoint_encoder = torch.load('checkpoints/inference/inference_0208.tar')
+    checkpoint_encoder = torch.load('checkpoints/inference/encoder_soybean.tar')
     encoder_shape = ShapeEncoder()
     encoder_shape.load_state_dict(checkpoint_encoder['encoder_shape_state_dict'])
     encoder_shape.to(device)
@@ -234,7 +234,7 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/deform/exp-deform-dis__10000.tar')
+    checkpoint_deform = torch.load('checkpoints/deform/deform_soybean.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -410,7 +410,7 @@ if __name__ == '__main__':
                 
                 # export origin shape
                 origin= trimesh.points.PointCloud(point_cloud)
-                origin.export(f'origin_pt{i}.ply')
+                # origin.export(f'origin_pt{i}.ply')
 
 
                 # pca axis determination
@@ -431,4 +431,4 @@ if __name__ == '__main__':
                 deformed_mesh_optimized.export('deformed_canonical_{}.obj'.format(i))
                 vertice_final = np.matmul(deformed_mesh_optimized.vertices, R_c2w) 
                 deformed_mesh_rot = trimesh.Trimesh(vertice_final, deformed_mesh.faces, process=False)
-                deformed_mesh_rot.export('deformed_ori_{}.obj'.format(i))
+                # deformed_mesh_rot.export('deformed_ori_{}.obj'.format(i))

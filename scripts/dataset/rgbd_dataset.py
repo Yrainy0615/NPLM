@@ -20,8 +20,23 @@ from pytorch3d.structures import Pointclouds
 from scripts.model.point_encoder import PCAutoEncoder
 from pytorch3d.datasets import collate_batched_meshes
 import trimesh
-
+from scripts.model.reconstruction import create_grid_points_from_bounds
+from scipy.spatial import cKDTree as KDTree
 warnings.filterwarnings('ignore', message='No mtl file provided')
+
+
+def points_to_occ(point):
+    mini = [-.95, -.95, -.95]
+    maxi = [0.95, 0.95, 0.95]
+    resolution = 128
+    grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
+    kdtree = KDTree(grid_points)
+    occupancies = np.zeros(len(grid_points), dtype=np.int8)
+    _, idx = kdtree.query(point)
+    occupancies[idx] = 1
+    occupancy_grid = occupancies.reshape(resolution, resolution, resolution)
+    return occupancy_grid
+    
 
 def extract_info_from_masks(masks):
     plant_type_indices = defaultdict(int)
@@ -86,9 +101,9 @@ def normalize_verts(verts):
       vertices = (verts - center) *scale
       return vertices
 
-def rgbd_to_point_cloud(rgb,depth):
+def rgbd_to_voxel(rgb,depth):
     depth_scale = 1000
-    if type(rgb) ==str:
+    if type(rgb) ==str: 
         rgb = o3d.io.read_image(rgb)
         depth = o3d.io.read_image(depth)
     elif type(rgb) == np.ndarray:
@@ -111,7 +126,7 @@ def rgbd_to_point_cloud(rgb,depth):
     
     return pcd_points
 
-class Point_cloud_dataset(Dataset):
+class Voxel_dataset(Dataset):
     def __init__(self, mode):
         self.root_dir = 'dataset/Mesh_colored'
         self.deformed_dir = os.path.join(self.root_dir,'deformed')
@@ -193,7 +208,7 @@ class Point_cloud_dataset(Dataset):
                 point_cloud = np.load(point_savename)
                 # print('{} is loaded'.format(point_savename))
             else:
-                    point_cloud = rgbd_to_point_cloud(rgb_file,depth_file,camera_info)
+                    point_cloud = rgbd_to_voxel(rgb_file,depth_file,camera_info)
                     np.save(point_savename, point_cloud)
                     # print('{} is saved'.format(point_savename))
             
