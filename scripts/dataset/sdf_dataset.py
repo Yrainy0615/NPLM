@@ -33,7 +33,7 @@ class LeafDeformDataset(Dataset):
                  ):
         self.n_supervision_points_face = n_supervision_points_face
         self.all_sample = []
-        self.root_dir = 'dataset/ScanData'
+        self.root_dir = 'dataset/deform_soybean'
         for dirpath, dirnames, filenames in os.walk(self.root_dir):
             for filename in filenames:
                 if filename.endswith('.npy') and not 'neutral' in filename:

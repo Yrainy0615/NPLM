@@ -17,11 +17,9 @@ from collections import defaultdict
 from PIL import Image
 from transformers import ViTImageProcessor
 from pytorch3d.structures import Pointclouds
+from scripts.model.point_encoder import PCAutoEncoder
 from pytorch3d.datasets import collate_batched_meshes
 import trimesh
-from scipy.spatial import cKDTree as KDTree
-from scripts.model.reconstruction import create_grid_points_from_bounds
-import  skimage
 
 warnings.filterwarnings('ignore', message='No mtl file provided')
 
@@ -88,19 +86,8 @@ def normalize_verts(verts):
       vertices = (verts - center) *scale
       return vertices
 
-def points_to_occ(points):
-    points_norm = normalize_verts(points)
-    grid_points = create_grid_points_from_bounds([-1,-1,-1],[1,1,1],128)
-    kdtree = KDTree(grid_points)
-    _, idx = kdtree.query(points_norm)
-    occupancies = np.zeros(len(grid_points), dtype=np.int8)
-    occupancies[idx] = 1
-    occupancy_grid = np.reshape(occupancies, (128,) * 3)
-    return occupancy_grid
-
-def rgbd_to_voxel(rgb,depth,grid_points):
+def rgbd_to_point_cloud(rgb,depth):
     depth_scale = 1000
-    kdtree = KDTree(grid_points)
     if type(rgb) ==str:
         rgb = o3d.io.read_image(rgb)
         depth = o3d.io.read_image(depth)
@@ -119,27 +106,12 @@ def rgbd_to_voxel(rgb,depth,grid_points):
     intrinsics = o3d.camera.PinholeCameraIntrinsic(image_width, image_height, fx, fy, cx, cy)
     pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
     rgbd_image,intrinsics)
-    bb_max = pcd.get_max_bound()
-    bb_min = pcd.get_min_bound()
-    pcd.scale(1 / np.max(bb_max - bb_min), center=pcd.get_center())
-    voxel_3d = o3d.geometry.VoxelGrid.create_from_point_cloud(pcd, voxel_size=0.01)
-    # o3d.visualization.draw_geometries([voxel_3d])
-    # o3d.visualization.draw_geometries([pcd])
     pcd_points = np.asarray(pcd.points)
     pcd_points = normalize_verts(pcd_points)
-    # save occupancy 
-    occupancies = np.zeros(len(grid_points), dtype=np.int8)
-    _, idx = kdtree.query(pcd_points)
-    occupancies[idx] = 1
     
-    # compressed_occupancies = np.packbits(occupancies)
-    voxels = np.reshape(occupancies, (128,) * 3)
-    # vertices, triangles,_,_ = skimage.measure.marching_cubes(voxels, 0.015)
-    # mesh = trimesh.Trimesh(vertices, triangles)
-    # mesh.export('test.obj')
-    return voxels, pcd_points
+    return pcd_points
 
-class Voxel_dataset(Dataset):
+class Point_cloud_dataset(Dataset):
     def __init__(self, mode):
         self.root_dir = 'dataset/Mesh_colored'
         self.deformed_dir = os.path.join(self.root_dir,'deformed')
@@ -160,12 +132,9 @@ class Voxel_dataset(Dataset):
         self.all_mask.sort()
         self.plant_type_indices  = extract_info_from_masks(self.all_mask)
         np.random.seed(0)
-        index = np.random.randint(0, len(self.all_depth), 2000)
+        index = np.random.randint(0, len(self.all_depth), 10000)
         self.all_depth_sub = [self.all_depth[i] for i in index]
-        mini = [-.95, -.95, -.95]
-        maxi = [0.95, 0.95, 0.95]
-        resolution = 128
-        self.grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
+
     def __len__(self):
         return len(self.all_depth_sub)
     
@@ -200,15 +169,15 @@ class Voxel_dataset(Dataset):
         canonical_mask_im = np.rot90(canonical_mask_im, k=1, axes=(0, 1))
         rgb = Image.open(rgb_file).convert("RGB") 
         mask = Image.open(canonical_mask).convert("RGB")
-        mask = np.rot90(mask, k=1, axes=(0, 1))
         processor =  ViTImageProcessor.from_pretrained('facebook/dino-vitb16')
         inputs_mask = processor(images=mask, return_tensors="pt")
         inputs = processor(images=rgb, return_tensors="pt")
         camera_file = os.path.join(self.root_dir,'views',deformed_name,'camera.json')
+        point_savename  = depth_file.replace('_depth.png',' _points.npy')
         with open(camera_file) as f:
                 camera_info = json.load(f)
-        azimuth = torch.tensor(camera_info['azimuth'][int(render_index)])
-        polar_angle = torch.tensor(camera_info['polar_angle'][int(render_index)])
+        azimuth = torch.tensor(camera_info['azimuth'][int(render_index)]).rad2deg()
+        polar_angle = torch.tensor(camera_info['polar_angle'][int(render_index)]).rad2deg()
         if self.mode == 'texture':
             data = {'canonical_rgb': canonical_rgb.copy()/255,
                     'input_mask': inputs_mask,
@@ -220,18 +189,28 @@ class Voxel_dataset(Dataset):
                     'camera_pose': np.array([azimuth, polar_angle]),}
             return data     
         else: 
-            voxel = rgbd_to_voxel(rgb_file,depth_file,self.grid_points)
-
+            if os.path.exists(point_savename):
+                point_cloud = np.load(point_savename)
+                # print('{} is loaded'.format(point_savename))
+            else:
+                    point_cloud = rgbd_to_point_cloud(rgb_file,depth_file,camera_info)
+                    np.save(point_savename, point_cloud)
+                    # print('{} is saved'.format(point_savename))
+            
+            # random sample 2000 points from point cloud
+            index = np.random.randint(0, len(point_cloud), 3000)
+            point_cloud_sampled = point_cloud[index]
+            # load rgb
             data = {
-            'voxel': voxel,
-                'rgb': np.array(rgb.resize((256,256)))/255,
-            'camera_pose': np.array([azimuth.deg2rad(), polar_angle.deg2rad()]),
+            'points': point_cloud_sampled,
+                'rgb': np.array(rgb.resize((256,256))),
+            'camera_pose': np.array([azimuth, polar_angle]),
             'deform_index': int(deforn_index),
             'shape_index': shape_index,
             'inputs':inputs,
             'deformed_verts': deformed_verts,
             'canonical_rgb': canonical_rgb.copy()/255,
-            'canonical_mask': canonical_mask_im.copy()/255,
+            'canonical_mask': np.array(np.array(mask.resize((256,256)))/255),
             'deformed_name': deformed_name
             }
             return data
@@ -239,7 +218,7 @@ class Voxel_dataset(Dataset):
     
     
 if __name__ == "__main__":
-    dataset = Voxel_dataset()
+    dataset = Point_cloud_dataset()
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=0, collate_fn=default_collate)
     for i_batch, sample_batched in enumerate(dataloader):
         batch = sample_batched
