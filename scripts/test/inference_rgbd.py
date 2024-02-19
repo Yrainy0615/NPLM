@@ -107,11 +107,11 @@ class Predictor(object):
         return canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_imgs, deform_imgs
     
     def optim_latent(self, latent_shape_init, latent_deform_init, points):
-        optimizer_shape = optim.Adam([latent_shape_init], lr=1e-3)
-        optimizer_deform = optim.Adam([latent_deform_init], lr=1e-3)
+        optimizer_shape = optim.Adam([latent_shape_init], lr=5e-4)
+        optimizer_deform = optim.Adam([latent_deform_init], lr=5e-4)
         img_nps = []
         deform_nps = []
-        for i in range(100):
+        for i in range(400):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
