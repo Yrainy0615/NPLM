@@ -9,7 +9,40 @@ sys.path.append('NPLM')
 from scripts.dataset.rgbd_dataset import normalize_verts    
 from scripts.registration.leaf_axis_determination import LeafAxisDetermination
 import cv2
+from probreg import cpd
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
+import cupy as cp
+use_cuda = True
+if use_cuda:
+    # set gpu 2
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    to_cpu = cp.asnumpy
+    cp.cuda.set_allocator(cp.cuda.MemoryPool().malloc)
+else:
+    cp = np
+    to_cpu = lambda x: x
 
+def process(index, all_mesh, all_canonical_mask, points_sample, save_dir):                
+        mask_name = all_canonical_mask[index].split('.')[0]
+        if '_128' in mask_name:
+            mask_name = mask_name.split('_')[0]
+        # find mask name in all_mesh via string matching
+        mesh_path  = [f for f in all_mesh if mask_name in f]
+        mesh_canonical = trimesh.load(mesh_path[0])
+        source_pt = cp.asarray(mesh_canonical.vertices, dtype=cp.float32)
+
+        target_pt = cp.asarray(source_pt, dtype=cp.float32)
+        target_pt = target_pt[np.random.choice(target_pt.shape[0], 300, replace=False), :]
+
+        acpd = cpd.NonRigidCPD(source_pt, use_cuda=True)
+        tf_param, _, _ = acpd.registration(target_pt)
+        result = tf_param.transform(source_pt)
+        registed_mesh = trimesh.Trimesh(vertices=to_cpu(result), faces=mesh_canonical.faces)
+        save_name = mask_name + '_{}'.format(index) + '.obj'
+        registed_mesh.export(os.path.join(save_dir, save_name))
+        mesh_canonical.export(os.path.join(save_dir, mask_name + '_canonical.obj'))
+        print('save to {}'.format(save_name))
 method = 'l-w ratio'
 if method == 'pca':
     root = 'dataset/deform_soybean/done'
@@ -23,6 +56,7 @@ if method == 'pca':
             target_mesh = trimesh.load(target_path)
             points = target_mesh.vertices
             points = normalize_verts(points)
+            
             # random sample 1000 points
             points_sample = points[np.random.choice(points.shape[0], 1000, replace=False)]
             all_points.append(points_sample)
@@ -63,28 +97,37 @@ if method == 'l-w ratio':
     root = 'dataset/deform_soybean/done'
     all_files = os.listdir(root)
     all_files.sort()
-    save_dir = os.path.join(root, 'group')
+    save_dir = 'dataset/deformation'
     all_points = []
+    all_mesh = []
     ratios = []
     canonical_mask_root = 'dataset/leaf_classification/canonical_mask'
-    all_canonical_mask = [f for f in os.listdir(canonical_mask_root) ]
+    all_canonical_mask = os.listdir(canonical_mask_root)
+    canonical_mesh_root = 'dataset/leaf_classification/images'
     mask_ratios = []
+    for dirpath, dirnames, filenames in os.walk(canonical_mesh_root):
+        for filename in filenames:
+            if filename.endswith('_128.obj'):
+                all_mesh.append(os.path.join(dirpath, filename))
+    all_mesh.sort()
+    all_canonical_mask.sort()
     for mask in all_canonical_mask:
         mask_path = os.path.join(canonical_mask_root, mask)
         mask = cv2.imread(mask_path, 0)
         # calculate the ratio of the mask
-        mask = mask / 255
+        # mask = mask / 255
         mask = mask.astype(np.uint8)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnt = contours[0]
-        x, y, w, h = cv2.boundingRect(cnt)
-        # draw the bounding box
-        cv2.rectangle(mask, (x, y), (x + w, y + h), (255, 255, 255), 2)
-        ratio = w / h
+        # weight and height of mask region
+        contours, _= cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnt = max(contours, key=cv2.contourArea)
+
+        #cv2.drawContours(mask, contours[0], -1, (255, 255, 255), 1) 
+        x,y,w,h = cv2.boundingRect(cnt)
+        ratio = h/w
         mask_ratios.append(ratio)
 
     for i in all_files:
-        if i.endswith('.obj'):
+        if i.endswith('.obj') and not 'maple' in i:
             target_path = os.path.join(root, i)
             target_mesh = trimesh.load(target_path)
             points = target_mesh.vertices
@@ -100,7 +143,34 @@ if method == 'l-w ratio':
             projection_2 = np.dot(points, y_axis)
             length_2 = projection_2.max() - projection_2.min()
             ratio = length_1 / length_2
-            # find the nearest mask ratio
-            nearest_mask_ratio = np.argmin(np.abs(np.array(mask_ratios) - ratio))
+            # find the nearest  5 mask 
+            mask_five = np.argsort(np.abs(np.array(mask_ratios) - ratio))[:5]
+            for index in mask_five:
+                process(index, all_mesh, all_canonical_mask, points_sample, save_dir)
+                # mask_name = all_canonical_mask[index].split('.')[0]
+                # if '_128' in mask_name:
+                #     mask_name = mask_name.split('_')[0]
+                # # find mask name in all_mesh via string matching
+                # mesh_path  = [f for f in all_mesh if mask_name in f]
+                # mesh_canonical = trimesh.load(mesh_path[0])
+                # acpd = cpd.NonRigidCPD(mesh_canonical.vertices, use_cuda=False)
+                # tf_param, _, _ = acpd.registration(points_sample)
+                # result = tf_param.transform(mesh_canonical.vertices)
+                # registed_mesh = trimesh.Trimesh(vertices=result, faces=mesh_canonical.faces)
+                # save_name = mask_name + '_{}'.format(i)
+                # registed_mesh.export(os.path.join(save_dir, save_name))
+                # mesh_canonical.export(os.path.join(save_dir, mask_name + '_canonical.obj'))
+                # print('save to {}'.format(save_name))
+
+            # with ProcessPoolExecutor(max_workers=2) as executor:
+            #     # Wrap the executor with tqdm for progress visualization
+            #     futures = [executor.submit(process, index, all_mesh, all_canonical_mask, points_sample, save_dir) for index in mask_five]
+            #     for future in as_completed(futures):
+            #         future.result()
+
+                
+                
+                                
+          
             
-    pass
+       

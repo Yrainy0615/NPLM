@@ -287,3 +287,30 @@ def texture_loss(batch, cameranet, encoder_3d, encoder_2d, epoch, cfg,
     grid_pred = make_grid(texture_fake, nrow=8, normalize=True)
     pred_pil = transforms.ToPILImage()(grid_pred.cpu())
     return loss_dict, gt_pil, pred_pil
+
+
+def end_to_end_loss(batch, decoder_shape, latent_shape,
+                    decoder_deform, latent_deform, device):
+    batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+    # load data
+    points_p = batch_cuda['points_p']
+    points_c = batch_cuda['points_c']
+    sdf_gt = batch_cuda['sdf_gt']
+    idx =  batch_cuda.get('idx')
+    shape_code = latent_shape(idx)
+    deform_code = latent_deform(idx)
+    latent = torch.cat((shape_code, deform_code), dim=1)
+    # deformation prediction
+    points_c_pred = decoder_deform(points_p, latent )
+    sdf_pred = decoder_deform(points_c_pred, latent )
+    loss_sdf = F.mse_loss(sdf_pred.squeeze(), sdf_gt)
+    lat_reg_shape = torch.norm(shape_code, dim=-1) ** 2
+    lat_reg_deform = torch.norm(deform_code, dim=-1) ** 2
+    loss_dict = {
+        'loss_sdf': loss_sdf,
+        'lat_reg_shape': lat_reg_shape.mean(),
+        'lat_reg_deform': lat_reg_deform.mean()
+    }
+    return loss_dict
+    
+    
