@@ -53,43 +53,43 @@ def visualize_points_and_axes(points , origin, x_axis,y_axis, z_axis):
     ax.set_xlabel('X Label')
     ax.set_ylabel('Y Label')
     ax.set_zlabel('Z Label')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_zlim(-1, 1)
     plt.show()
 
 if __name__ == "__main__":
     data_path = 'LeafSurfaceReconstruction/data/sugarbeet'
-    points = []
-    canonical_shape_path = 'dataset/Mesh_colored/Bael_0.obj'
-    canonical_shape = trimesh.load(canonical_shape_path)
-    leafAxisDetermination = LeafAxisDetermination(canonical_shape.vertices)
-    w_axis_canonical, l_axis_canonical, h_axis_canonical, canonical_points = leafAxisDetermination.process()
-    # random sample 1000
-    canonical_points = canonical_points[np.random.choice(canonical_points.shape[0], 1000, replace=False), :]
-    w_axis_canonical = np.array([0, 1, 0])
-    l_axis_canonical = np.array([1, 0, 0])
-    h_axis_canonical = np.array([0, 0, 1])
-    
-    
-    # read txt point cloud data
-    for file in os.listdir(data_path):
-        if file.endswith(".txt"):
-            file_path = os.path.join(data_path, file)
-            print(file_path)
-            data = pd.read_csv(file_path, names=("x", "y", "z")).values
-            points.append(data)
+    root = 'dataset/deform_soybean'
+    for i in os.listdir(root):
+        if not i.endswith('.obj'):
+            continue
+        target_path = os.path.join(root, i)
+        #target_path = '/home/yang/projects/parametric-leaf/dataset/deform_soybean/20190722_DN252_leaf_33.obj'
 
-    for point_cloud in points:
-        print('current point cloud shape is {}'.format(point_cloud.shape))
-        point_cloud = normalize_verts(point_cloud)
-        point_cloud = point_cloud - np.mean(point_cloud, axis=0)
-        leafAxisDetermination = LeafAxisDetermination(point_cloud)
-        
-        w_axis, l_axis, h_axis, new_points = leafAxisDetermination.process()
-        # normalize points to(-1,1)
-        R = find_rotation_matrix(np.array([l_axis_canonical, w_axis_canonical, h_axis_canonical]).T, np.array([l_axis, w_axis, h_axis]).T)
-        new_points_rotated = new_points @ R.T
-        visualize_points_and_axes(new_points, new_points_rotated, canonical_points,np.mean(new_points, axis=0), l_axis_canonical, w_axis_canonical, h_axis_canonical)
-        # visualize_points_and_axes(canonical_points, np.mean(canonical_points, axis=0), l_axis_canonical, w_axis_canonical, h_axis_canonical)
-        # visualize_points_and_axes(new_points_rotated, np.mean(new_points_rotated, axis=0), l_axis_canonical, w_axis_canonical, h_axis_canonical)
-        # pass
+        target_mesh = trimesh.load(target_path)
+        points = target_mesh.vertices
+        w_axis_canonical = np.array([0, 1, 0])
+        l_axis_canonical = np.array([1, 0, 0])
+        h_axis_canonical = np.array([0, 0, 1])
 
+        # random sample 1000 points
+        points_sample = points[np.random.choice(points.shape[0], 1000, replace=False)]
+        leafAxisDetermination = LeafAxisDetermination(points_sample)
             
+        w_axis, l_axis, h_axis, new_points = leafAxisDetermination.process()
+        # visualize_points_and_axes(new_points, np.mean(new_points, axis=0),l_axis, w_axis, h_axis)
+        # find rotation matrix
+        R_w2c = find_rotation_matrix(np.array([l_axis_canonical, w_axis_canonical, h_axis_canonical]), np.array([l_axis, w_axis, h_axis]))
+        points_canonical = points @ R_w2c.T
+        canonical_mesh = trimesh.Trimesh(points_canonical, target_mesh.faces)
+        canonical_mesh.export(target_path)
+        print('{} is rotated'.format(target_path))
+    # visualize_points_and_axes(points_canonical, np.mean(points_canonical, axis=0),l_axis_canonical, w_axis_canonical, h_axis_canonical)
+    
+    # R_w2c_gt = np.linalg.inv(R_c2w)
+    # points_ori_gt = new_points @ RT_w2c
+    # points_ori = new_points @ R_w2c.T
+    
+    
+    

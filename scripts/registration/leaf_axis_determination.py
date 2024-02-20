@@ -89,7 +89,7 @@ class LeafAxisDetermination(object):
         l_axis, component_2, component_3 = self.pca_pointcloud(self.p_init)
 
         # 3
-        self.p_init = self.p_init - np.mean(self.p_init, axis=0)
+        # self.p_init = self.p_init - np.mean(self.p_init, axis=0)
 
         # 4
         # we use the component_3 we calculated above as the d_axis
@@ -113,8 +113,8 @@ class LeafAxisDetermination(object):
         # with ProcessPoolExecutor(max_workers=4) as executor:
         #     res = [executor.submit(surface_area_calculation, l_axis, d_axis, bins, bin_range, self.p_init, i)
         #             for i in range(180)]
-        
-        for i in range(180):
+        # check every 10 degrees
+        for i in range(0, 180, 10):
             self.surface_area_list.append(surface_area_calculation(l_axis, d_axis, bins, bin_range, self.p_init, i))
         
             # for future in as_completed(res):

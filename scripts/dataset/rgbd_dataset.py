@@ -101,7 +101,7 @@ def normalize_verts(verts):
       vertices = (verts - center) *scale
       return vertices
 
-def rgbd_to_voxel(rgb,depth):
+def rgbd_to_voxel(rgb,depth, grid_points):
     depth_scale = 1000
     if type(rgb) ==str: 
         rgb = o3d.io.read_image(rgb)
@@ -123,8 +123,12 @@ def rgbd_to_voxel(rgb,depth):
     rgbd_image,intrinsics)
     pcd_points = np.asarray(pcd.points)
     pcd_points = normalize_verts(pcd_points)
-    
-    return pcd_points
+    kdtree = KDTree(grid_points)
+    occupancies = np.zeros(len(grid_points), dtype=np.int8)
+    _, idx = kdtree.query(pcd_points)
+    occupancies[idx] = 1
+    occupancy_grid = occupancies.reshape(128, 128, 128)
+    return occupancy_grid, pcd_points
 
 class Voxel_dataset(Dataset):
     def __init__(self, mode):

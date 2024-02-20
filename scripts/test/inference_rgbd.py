@@ -107,11 +107,11 @@ class Predictor(object):
         return canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_imgs, deform_imgs
     
     def optim_latent(self, latent_shape_init, latent_deform_init, points):
-        optimizer_shape = optim.Adam([latent_shape_init], lr=5e-4)
-        optimizer_deform = optim.Adam([latent_deform_init], lr=5e-4)
+        optimizer_shape = optim.Adam([latent_shape_init], lr=1e-3)
+        optimizer_deform = optim.Adam([latent_deform_init], lr=1e-3)
         img_nps = []
         deform_nps = []
-        for i in range(400):
+        for i in range(50):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
@@ -251,7 +251,7 @@ if __name__ == '__main__':
     grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
     # predict
     predictor = Predictor(encoder_shape, encoder_pose, encoder_2d, cameranet, trainloader, lat_idx_all, lat_deform_all, decoder_shape, decoder_deform, generator, CFG, device)
-    data_source = 'soybean'
+    data_source = 'denseleaf'
     z_axis_canonical = np.array([0, 0, 1])
     x_axis_canonical = np.array([1, 0, 0])
     y_axis_canonical = np.array([0, 1, 0])
@@ -303,7 +303,7 @@ if __name__ == '__main__':
             imageio.mimsave('deform_img_{}.gif'.format(i), deform_img, 'GIF', fps=5)
         
     if data_source == 'denseleaf':
-
+        save_folder = 'results/rgbd'
         test_data= 'views/0.hdf5'
         latent_shape_init = lat_idx_all[100]
         with h5py.File(test_data, 'r') as f:
@@ -370,16 +370,16 @@ if __name__ == '__main__':
             
             # canonical_mesh_optimized.export('canonical_mesh_optimized_{}.obj'.format(i))
             deformed_mesh_optimized.vertices = normalize_verts(deformed_mesh_optimized.vertices)
-            deformed_mesh_optimized.export('deformed_canonical_{}.obj'.format(i))
+            deformed_mesh_optimized.export(os.path.join(save_folder,'deformed_canonical_{}.obj'.format(i)))
             vertice_final = np.matmul(deformed_mesh_optimized.vertices, R_c2w) + np.mean(point_cloud, axis=0)
             deformed_mesh_rot = trimesh.Trimesh(vertice_final, deformed_mesh.faces, process=False)
-            deformed_mesh_rot.export('deformed_ori_{}.obj'.format(i))
+            deformed_mesh_rot.export(os.path.join(save_folder,'deformed_ori_{}.obj'.format(i)))
             origin= trimesh.points.PointCloud(point_cloud)
             origin_canonical = trimesh.points.PointCloud(point_cloud_canonical)
-            origin.export(f'origin_pt{i}.ply')
-            origin_canonical.export(f'origin_canonical_pt{i}.ply')
-            imageio.mimsave('canonical_img_{}.gif'.format(i), canonical_img, 'GIF',fps=5)
-            imageio.mimsave('deform_img_{}.gif'.format(i), deform_img, 'GIF', fps=5)
+            origin.export(os.path.join(save_folder, 'origin_pt{}.ply').format(i))
+            origin_canonical.export(os.path.join(save_folder, 'origin_canonical_pt{}.ply'.format(i)))
+            imageio.mimsave(os.path.join(save_folder,'canonical_img_{}.gif'.format(i)), canonical_img, 'GIF',fps=5)
+            imageio.mimsave(os.path.join(save_folder ,'deform_img_{}.gif'.format(i)), deform_img, 'GIF', fps=5)
             
             pass
         
