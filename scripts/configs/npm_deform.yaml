@@ -1,36 +1,41 @@
 shape_decoder:
-  decoder_lat_dim: 512
+  decoder_lat_dim: 128
   decoder_hidden_dim: 1024
   decoder_out_dim: 1
   decoder_nlayers: 8
-  use_mapping: True
+  use_mapping: False
 
 deform_decoder:
   decoder_hidden_dim: 1024
-  decoder_lat_dim: 512
+  decoder_lat_dim: 256
   decoder_nlayers: 8
   decoder_out_dim: 3
   use_mapping: False
 
 training:
-  save_name: exp-deforamtion-soybean
-  save_path: checkpoints/deform
+  root_dir: dataset/deformation
+  save_name: deform-base
+  save_path: checkpoints/deform_final
   train_color: 1000
   use_nce: False
-  use_distance: True
-  batch_size: 128
-  ckpt_interval: 100
+  use_distance: False
+  batch_size: 64
+  ckpt_interval: 1000
   ckpt_vis: 1000
   grad_clip: 0.025
   grad_clip_lat: 0.025
   npoints_decoder: 2000
   weight_decay: 0.02
+  siama_near: 0.01
   lambdas:
     corresp: 100.0
-    loss_distance: 1
+   # loss_distance: 1
     lat_reg: 5.0e-05
-    loss_reg_zero: 0.0
-  lr: 0.0001
+    loss_reg_zero: 5.0e-05
+    # loss_sdf: 1.0
+    # lat_reg_shape: 0.1
+    # lat_reg_deform: 0.1
+  lr: 0.0005
   lr_decay_factor: 0.2
   lr_decay_factor_lat: 0.2
   lr_decay_interval: 1000

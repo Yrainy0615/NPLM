@@ -31,11 +31,13 @@ if __name__ == "__main__":
     VIZ=False
     n_samples = 25000
     #main(n_samples)
-    deformation_dir  = 'dataset/deform_soybean/'
-    m_neutral = trimesh.load('dataset/leaf_classification/images/Quercus_Phillyraeoides/43_128.obj' )
+    deformation_dir  = 'dataset/deformation_maple/'
+    # m_neutral = trimesh.load('dataset/leaf_classification/images/Quercus_Phillyraeoides/43_128.obj' )
     for deform in os.listdir(deformation_dir) :
         if not 'template' in deform and deform.endswith('.obj'):
             m_deformed = trimesh.load(os.path.join(deformation_dir, deform))
+            shape_index = deform.split('_')[0]
+            m_neutral = trimesh.load(f'dataset/leaf_classification/canonical_mesh/{shape_index}.obj')
             p_neutral, p, normals_neutral, normals = sample(m_neutral, m_deformed, 0.01, n_samples)
             p_neutral2, p2, normals_neutral2, normals2 = sample(m_deformed, m_neutral, 0.01, n_samples)
             p_neutral, p, normals_neutral, normals = sample(m_neutral, m_deformed, 0.01, n_samples)

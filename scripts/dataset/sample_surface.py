@@ -64,12 +64,12 @@ def run_poses(manager):
 
 
 if __name__ == "__main__":
-    root = 'dataset/LeafData'    
+    root = 'dataset/leaf_classification/canonical_mesh'    
     save_mesh = True
     all_mesh = []
     for dirpath , dirnames, filenames in os.walk(root):
         for filename in filenames:
-            if filename.endswith('.obj'):
+            if filename.endswith('.obj') and not 'canonical' in filename:
                 all_mesh.append(os.path.join(dirpath, filename))
     all_mesh.sort()
     run_species(all_mesh)

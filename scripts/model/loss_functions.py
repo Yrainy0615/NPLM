@@ -99,9 +99,9 @@ def compute_sdf_3d_loss(batch, decoder, latent_idx,device):
     # sdf_gt_far = batch_cuda['sup_grad_far_sdf'].clone().detach().requires_grad_()
     
     # model computations
-    pred_surface = decoder(sup_surface, glob_cond.repeat(1, sup_surface.shape[1], 1))
-    pred_space_near = decoder(sup_grad_near, glob_cond.repeat(1, sup_grad_near.shape[1], 1))
-    pred_space_far = decoder(sup_grad_far, glob_cond.repeat(1, sup_grad_far.shape[1], 1))
+    pred_surface = decoder(sup_surface, glob_cond.unsqueeze(1).repeat(1, sup_surface.shape[1], 1))
+    pred_space_near = decoder(sup_grad_near, glob_cond.unsqueeze(1).repeat(1, sup_grad_near.shape[1], 1))
+    pred_space_far = decoder(sup_grad_far, glob_cond.unsqueeze(1).repeat(1, sup_grad_far.shape[1], 1))
 
     # normal computation
     gradient_surface = gradient(pred_surface, sup_surface)
@@ -133,9 +133,12 @@ def compute_sdf_3d_loss(batch, decoder, latent_idx,device):
                     'lat_reg':lat_mag.mean()}
     return ret_dict
 
-def compute_loss_corresp_forward(batch, decoder, latent_deform, device, cfg):
+def compute_loss_corresp_forward(batch, decoder, latent_shape,latent_deform, device, cfg):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-    glob_cond = latent_deform(batch['idx'].to(device))
+    shape_index  = batch_cuda['shape_idx']
+    deform_code = latent_deform(batch['deform_idx'].to(device))
+    shape_code = latent_shape[shape_index.long()]
+    glob_cond = torch.cat((deform_code, shape_code), dim=2)
     points_neutral = batch_cuda['points_neutral'].clone().detach().requires_grad_()
 
     cond = glob_cond.repeat(1, points_neutral.shape[1], 1)
@@ -154,20 +157,17 @@ def compute_loss_corresp_forward(batch, decoder, latent_deform, device, cfg):
         delta_norm = torch.norm(delta_gt,p=2,dim=(1,2)) /10
         loss_distance = ((distance.squeeze()/delta_norm) - 1)**2
     
-    # nce loss
-    if cfg['use_nce']:
-        nce = losses.NTXentLoss(temperature=0.5).cuda()
-        loss_infonce = nce(glob_cond.squeeze(), label.squeeze())
+
     
     # latent code regularization
     lat_mag = torch.norm(glob_cond, dim=-1)**2
     samps = (torch.rand(cond.shape[0], 100, 3, device=cond.device, dtype=cond.dtype) -0.5)*2.5
     delta = decoder(samps, cond[:, :100, :])
-    loss_reg_zero = (delta**2).mean()
+    # loss_reg_zero = (delta**2).mean()
     return {'corresp': loss_corresp.mean(),
-            'lat_reg': lat_mag.mean(),
-            'loss_reg_zero': loss_reg_zero,
-            'loss_distance': loss_distance.mean()}
+            'lat_reg': lat_mag.mean(),}
+          #  'loss_reg_zero': loss_reg_zero,}
+         #   'loss_distance': loss_distance.mean()}
 
 
 def compute_color_forward(batch, decoder, decoder_shape, latent_codes, latent_codes_shape, device, epoch=-1, exp_path=None):
@@ -217,6 +217,8 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
     loss_function = torch.nn.CrossEntropyLoss()
     # points_tensor = torch.tensor(points, dtype=torch.float32).to(device)
     deform_code_gt = latent_deform[(batch_cuda['deform_idx']).long()].to(device)
+    # check shape_index is right
+    assert batch_cuda['shape_idx'].max() < len(latent_shape), 'shape index out of range'
     shape_code_gt = latent_shape[batch_cuda['shape_idx'].long()].to(device)
     # forward pass for shape and deformation
     latent_shape_pred = encoder_shape(occupancy_grid)
@@ -293,21 +295,21 @@ def end_to_end_loss(batch, decoder_shape, latent_shape,
                     decoder_deform, latent_deform, device):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     # load data
-    points_p = batch_cuda['points_p']
-    points_c = batch_cuda['points_c']
-    sdf_gt = batch_cuda['sdf_gt']
-    idx =  batch_cuda.get('idx')
-    shape_code = latent_shape(idx)
-    deform_code = latent_deform(idx)
+    points = batch_cuda['points']
+    shape_idx =  batch_cuda.get('shape_idx')
+    deform_idx =  batch_cuda.get('deform_idx')
+    shape_code = latent_shape(shape_idx.int())
+    deform_code = latent_deform(deform_idx.int())
     latent = torch.cat((shape_code, deform_code), dim=1)
     # deformation prediction
-    points_c_pred = decoder_deform(points_p, latent )
-    sdf_pred = decoder_deform(points_c_pred, latent )
-    loss_sdf = F.mse_loss(sdf_pred.squeeze(), sdf_gt)
+    points_c_pred = decoder_deform(points, latent.unsqueeze(1).repeat(1, points.shape[1], 1) )
+    sdf_pred = decoder_shape(points_c_pred, shape_code.unsqueeze(1).repeat(1, points.shape[1], 1) )
+    loss_sdf = torch.abs(sdf_pred).squeeze()
+
     lat_reg_shape = torch.norm(shape_code, dim=-1) ** 2
     lat_reg_deform = torch.norm(deform_code, dim=-1) ** 2
     loss_dict = {
-        'loss_sdf': loss_sdf,
+        'loss_sdf': loss_sdf.mean(),
         'lat_reg_shape': lat_reg_shape.mean(),
         'lat_reg_deform': lat_reg_deform.mean()
     }

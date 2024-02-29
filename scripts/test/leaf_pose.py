@@ -3,9 +3,10 @@ import os
 import pandas as pd
 import sys
 sys.path.append('NPLM/scripts')
-from registration.helper_functions import *
-from registration.leaf_axis_determination import LeafAxisDetermination
-from registration.leaf_flattening import LeafFlattening
+
+from scripts.registration.helper_functions import *
+from scripts.registration.leaf_axis_determination import LeafAxisDetermination
+from scripts.registration.leaf_flattening import LeafFlattening
 import trimesh
 
 
@@ -60,9 +61,9 @@ def visualize_points_and_axes(points , origin, x_axis,y_axis, z_axis):
 
 if __name__ == "__main__":
     data_path = 'LeafSurfaceReconstruction/data/sugarbeet'
-    root = 'dataset/deform_soybean'
+    root = 'dataset/deform_soybean/done'
     for i in os.listdir(root):
-        if not i.endswith('.obj'):
+        if not 'maple' in i:
             continue
         target_path = os.path.join(root, i)
         #target_path = '/home/yang/projects/parametric-leaf/dataset/deform_soybean/20190722_DN252_leaf_33.obj'

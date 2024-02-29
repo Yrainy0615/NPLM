@@ -19,14 +19,18 @@ from torch.utils.data import DataLoader
 import random
 from scripts.model.reconstruction import latent_to_mesh, deform_mesh, save_mesh_image_with_camera
 
+CUDA_LAUNCH_BLOCKING=1
+
 class DeformTrainer(object):
-    def __init__(self, decoder,cfg, 
+    def __init__(self, decoder,cfg, latent_shape,
                  trainset,trainloader,device, args):
         self.decoder = decoder
         self.cfg = cfg['training']
         self.trainset = trainset
         self.args = args
-        self.latent_deform = torch.nn.Embedding(len(trainset), 512, max_norm = 1.0, sparse=True, device = device).float()
+        self.latent_shape = latent_shape
+        self.latent_shape.requires_grad = False
+        self.latent_deform = torch.nn.Embedding(812, 128, max_norm = 1.0, sparse=True, device = device).float()
         torch.nn.init.normal_(self.latent_deform.weight.data, 0.0, 0.01)
         print('deform latent loaded with dims:{}'.format(self.latent_deform.weight.data.shape))
         
@@ -106,7 +110,7 @@ class DeformTrainer(object):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
-            path = self.checkpoint_path + '/latest.tar'
+            path = self.checkpoint_path + '/latest_base.tar'
             torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
@@ -130,7 +134,7 @@ class DeformTrainer(object):
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
         loss_dict = compute_loss_corresp_forward(batch,
-                                decoder=self.decoder, device=self.device,
+                                decoder=self.decoder, device=self.device, latent_shape=self.latent_shape,
                                 latent_deform=self.latent_deform,cfg = self.cfg)
         loss_total = 0
         for key in loss_dict.keys():
@@ -207,7 +211,11 @@ if __name__ == "__main__":
                         n_supervision_points_face=CFG['training']['npoints_decoder'])
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
 
-
+    # shape latent
+    checkpoint_shape = torch.load('checkpoints/shape/Shape_final__12000.tar')
+    latent_shape = checkpoint_shape['latent_idx_state_dict']['weight']
+    latent_shape.to(device)
+    
     decoder = UDFNetwork(d_in=CFG['deform_decoder']['decoder_lat_dim'],
                          d_hidden=CFG['deform_decoder']['decoder_hidden_dim'],
                          d_out=CFG['deform_decoder']['decoder_out_dim'],
@@ -224,6 +232,7 @@ if __name__ == "__main__":
     trainer = DeformTrainer(
                             decoder=decoder,
                             cfg=CFG, 
+                            latent_shape=latent_shape,
                             trainset=trainset,trainloader=trainloader, 
                             device=device,
                             args=args)

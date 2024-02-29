@@ -5,7 +5,7 @@ import torch
 from matplotlib import pyplot as plt
 import skimage.measure
 from scripts.dataset.img_to_3dsdf import sdf2d_3d
-
+from scipy.spatial import cKDTree as KDTree
 
 def save_mesh_image_with_camera(vertices, faces):
     fig = plt.figure()
@@ -42,6 +42,31 @@ def latent_to_mesh(decoder, latent_idx,device, resolution=128):
     # else:
     #     img = save_mesh_image_with_camera(mesh.vertices, mesh.faces)
     return mesh 
+
+def latent_to_mesh_e2e(points, sdf ,device, resolution=128):
+    mini = [-.95, -.95, -.95]
+    maxi = [0.95, 0.95, 0.95]
+    grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
+    points = points.cpu().detach().numpy()
+    sdf = sdf.cpu().detach().numpy()
+    # grid_points = torch.from_numpy(grid_points).to(device, dtype=torch.float)
+    # grid_points = torch.reshape(grid_points, (1, len(grid_points), 3)).to(device)
+    grid_points = grid_points.reshape(1, len(grid_points), 3)
+    tree = KDTree(points)
+    k=4
+    distances, indices = tree.query(grid_points.squeeze(), k=k)
+    weights = 1 / distances
+    weights /= weights.sum(axis=1)[:, np.newaxis]  
+    sdf_values_interpolated = np.sum(weights.squeeze() * sdf[indices].squeeze(), axis=1)
+    logits = np.reshape(sdf_values_interpolated, (resolution,) * 3)
+    mesh = mesh_from_logits(logits, mini, maxi,resolution)
+
+
+    pass
+
+    
+    
+
 
 def create_grid_points_from_bounds(minimun, maximum, res, scale=None):
     if scale is not None:

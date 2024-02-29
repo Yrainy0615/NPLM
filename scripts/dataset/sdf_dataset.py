@@ -33,7 +33,7 @@ class LeafDeformDataset(Dataset):
                  ):
         self.n_supervision_points_face = n_supervision_points_face
         self.all_sample = []
-        self.root_dir = 'dataset/deform_soybean'
+        self.root_dir = 'dataset/deformation'
         for dirpath, dirnames, filenames in os.walk(self.root_dir):
             for filename in filenames:
                 if filename.endswith('.npy') and not 'neutral' in filename:
@@ -44,8 +44,9 @@ class LeafDeformDataset(Dataset):
     
     def __getitem__(self, index):
         filename = self.all_sample[index]
-        parts = filename.split('_')
-        name = '_'.join(parts[:2])
+        name = os.path.basename(filename)
+        shape_index = name.split('_')[0]
+        deform_index = name.split('_')[1]
         trainfile = np.load(self.all_sample[index], allow_pickle=True)
         valid = np.logical_not(np.any(np.isnan(trainfile), axis=-1))
         point_corresp = trainfile[valid,:].astype(np.float32)
@@ -58,7 +59,8 @@ class LeafDeformDataset(Dataset):
         return {
             'points_neutral': neutral,
             'points_posed': pose,
-            'idx': np.array([index]),
+            'shape_idx': np.array([int(shape_index)]),
+            'deform_idx': np.array([int(deform_index)])  
         }
 
 
@@ -142,53 +144,48 @@ class LeafSDF2dFDataset(Dataset):
         return np.array(points)[sampled_points]
     
 class LeafSDF3dDataset(Dataset):
-    def __init__(self, root_dir, num_samples, sigma_near, num_samples_space) -> None:
+    def __init__(self, root_dir, num_samples, 
+                 num_sample_space, sigma_near) -> None:
         super().__init__()
-        self.all_file = []
         self.root_dir = root_dir
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            for filename in filenames:
-                if filename.endswith('_3d.npy'):
-                    self.all_file.append(os.path.join(dirpath, filename))
+        self.all_file = [f for f in os.listdir(root_dir) if f.endswith('.npy')]
         self.all_file.sort()
-        
-        extra_file_path = 'dataset/leaf_classification/images'
-        self.all_extra_file = []
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            for filename in filenames:
-                if filename.endswith('_3d.npy'):
-                    self.all_extra_file.append(os.path.join(dirpath, filename))
-        self.all_extra_file.sort()
         self.num_samples = num_samples
         self.sigma_near = sigma_near
-        self.num_samples_space = num_samples_space
-        self.all_file.extend(self.all_extra_file)
+        self.num_samples_space = num_sample_space
+        all_base = [f.split('.')[0] for f in self.all_file]
+        all_shape_id = [int(f.split('_')[0]) for f in all_base]
+        # all_deform_id = [int(f.split('_')[1]) for f in all_base]
+        # map shape_id to index
+        self.shape_id_to_idx = {k: v for v, k in enumerate(set(all_shape_id))}
+        # self.deform_id_to_idx = {k: v for v, k in enumerate(set(all_deform_id))}
         
     def __len__(self):
         return len(self.all_file)
     
     def __getitem__(self, index):
-        trainfile = self.all_file[index]
+        trainfile = os.path.join(self.root_dir, self.all_file[index])
+        basename = self.all_file[index].split('.')[0]
+        shape_id = int(basename.split('_')[0])
+        shape_index = self.shape_id_to_idx[shape_id]
+        # deform_id = int(basename.split('_')[1])
+        # deform_index = self.deform_id_to_idx[deform_id]
         data = np.load(trainfile, allow_pickle=True)
         points = data.item()['points']
         normals = data.item()['normals']
-        mesh = trimesh.load(trainfile.replace('_3d.npy', '.obj'))
         sup_idx = np.random.randint(0, points.shape[0], self.num_samples)
         sup_points = points[sup_idx,:]
         sup_normals = normals[sup_idx,:]
         
         # near surface & random in space
         sup_grad_far = uniform_ball(self.num_samples_space, rad=0.5)
-        # sup_grad_far_sdf = igl.signed_distance(sup_grad_far,mesh.vertices, mesh.faces)[0]
         sup_grad_near = sup_points + np.random.randn(sup_points.shape[0], 3) * self.sigma_near
-        # sup_grad_near_sdf = igl.signed_distance(sup_grad_near,mesh.vertices, mesh.faces)[0]
         ret_dict = {'points': sup_points,
                     'normals': sup_normals,
                     'sup_grad_far': sup_grad_far,
                     'sup_grad_near': sup_grad_near,
-                    # 'sup_grad_near_sdf': sup_grad_near_sdf,
-                    # 'sup_grad_far_sdf': sup_grad_far_sdf,
-                    'idx': np.array([index])}
+                    'idx': np.array(shape_index),}
+              #      'deform_idx': np.array(deform_index),}
         return ret_dict
 
 class EncoderDataset(Dataset):
@@ -273,12 +270,15 @@ class EncoderDataset(Dataset):
         return rotated_grid
 
 if __name__ == "__main__":
-    cfg_path ='NPLM/scripts/configs/npm.yaml'
+    cfg_path ='NPLM/scripts/configs/npm_3d.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
-    #dataset = LeafDeformDataset(n_supervision_points_face=2000)
-    dataset = EncoderDataset('results/viz_space')
+    # dataset = LeafDeformDataset(n_supervision_points_face=2000)
+    dataset = LeafSDF3dDataset(root_dir=CFG['training']['root_dir'],
+                               num_samples=2000,
+                               num_sample_space=2000,
+                               sigma_near=0.01)
     dataloader = DataLoader(dataset, batch_size=8,shuffle=False, num_workers=8)
-    for batch in dataloader:
-        print(batch['occupancy_grid'].shape)
+    batch = next(iter(dataloader))
     pass
+
    

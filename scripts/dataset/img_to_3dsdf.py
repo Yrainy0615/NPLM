@@ -16,7 +16,13 @@ MAX_DIST = 2147483647
 null = ti.Vector([-1, -1, MAX_DIST])
 vec3 = lambda scalar: ti.Vector([scalar, scalar, scalar])
 eps = 1e-5
-
+def normalize_verts(verts):
+      bbmin = verts.min(0)
+      bbmax = verts.max(0)
+      center = (bbmin + bbmax) * 0.5
+      scale = 2.0 * 0.8 / (bbmax - bbmin).max()
+      vertices = (verts - center) *scale
+      return vertices
 
 @ti.data_oriented
 class SDF2D:
@@ -311,21 +317,18 @@ def sdf2d_3d(sdf_2d):
         return sdf_3d
 
 if __name__ == "__main__":
-    root = 'dataset/LeafData'    
+    root = 'dataset/leaf_classification/canonical_mask'    
+    save_dir = 'dataset/leaf_classification/canonical_mesh'
     save_mesh = True
-    all_masks = []
-    for dirpath , dirnames, filenames in os.walk(root):
-        for filename in filenames:
-            if filename.endswith('.JPG') and 'mask' in filename:
-                all_masks.append(os.path.join(dirpath, filename))
+    all_masks = [f for f in os.listdir(root)]
+
     all_masks.sort()
     for i in range(len(all_masks)):
-        mask_path =all_masks[i]
-        save_name = mask_path.replace('.JPG', '_128.obj')
-        npy_name = mask_path.replace('.jpg', ' _128.npy')
-        if os.path.exists(save_name):
+        mask_name =all_masks[i]
+        save_name = mask_name.split('.')[0] + '.obj'
+        if os.path.exists(os.path.join(save_dir, save_name)):
             continue
-        mySDF2D = SDF2D(mask_path)
+        mySDF2D = SDF2D(os.path.join(root, mask_name))
         sdf_image = mySDF2D.mask2sdf()
         sdf_2d = image_to_sdf(sdf_image)
         sdf_2d = cv2.resize(sdf_2d, (128,128),interpolation=cv2.INTER_AREA)
@@ -338,6 +341,7 @@ if __name__ == "__main__":
             mini = [-.95, -.95, -.95]
             maxi = [0.95, 0.95, 0.95]   
             mesh = mesh_from_sdf(sdf_3d,mini=mini, maxi=maxi , resolution=128)
-            mesh.export(f'{save_name}')
+            mesh.vertices = normalize_verts(mesh.vertices)
+            mesh.export(os.path.join(save_dir, save_name))
             print(f'save mesh {save_name}')
     

@@ -107,7 +107,7 @@ class ShapeTrainer(object):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
-            path = self.checkpoint_path + '/latest.tar'
+            path = self.checkpoint_path + '/latest_new.tar'
             torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
@@ -185,9 +185,9 @@ class ShapeTrainer(object):
             
             if args.save_mesh:
                 if epoch % ckp_vis ==0:
-                    lat = self.latent_idx.weight[random.randint(0,len(trainset)-1)].to(self.device)
+                    lat = self.latent_idx.weight[0].to(self.device)
                     mesh = latent_to_mesh(self.decoder,lat , device=self.device)
-                    mesh.export('epoch_{:04d}.ply'.format(epoch))
+                    mesh.export('epoch_{:04d}.obj'.format(epoch))
 
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():
@@ -219,10 +219,10 @@ if __name__ == '__main__':
         wandb.init(project='NPLM', name =args.wandb)
         wandb.config.update(CFG)
     #dataset
-    trainset = LeafSDF3dDataset(root_dir=CFG['training']['root_dir_color'],
+    trainset = LeafSDF3dDataset(root_dir=CFG['training']['root_dir'],
                                  num_samples=CFG['training']['npoints_decoder'],
                                  sigma_near=CFG['training']['sigma_near'],
-                                 num_samples_space=CFG['training']['npoints_decoder_space'])
+                                 num_sample_space=CFG['training']['npoints_decoder_space'])
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=2)
 
     decoder = UDFNetwork(d_in=CFG['decoder']['decoder_lat_dim'],
@@ -234,7 +234,7 @@ if __name__ == '__main__':
                          udf_type='sdf')
     decoder = decoder.to(device)
     trainer = ShapeTrainer(decoder, CFG, trainset,trainloader, device,args)
-    trainer.train(10001)
+    trainer.train(30001)
             
         
         
