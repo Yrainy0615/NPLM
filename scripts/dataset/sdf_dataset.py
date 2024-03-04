@@ -208,11 +208,12 @@ class EncoderDataset(Dataset):
         deform_index = int(basename.split('_')[1])
         mesh_file = os.path.join(self.root_dir, mesh_name) 
         npy_file = mesh_file.replace('.obj', '.npy')
+        mesh = trimesh.load_mesh(mesh_file)
+        ind = np.random.randint(0, len(mesh.vertices), 2000)
+        points = mesh.vertices[ind]
+
         if os.path.exists(npy_file):
             occupancy_grid = np.load(npy_file, allow_pickle=True)
-            mesh = trimesh.load_mesh(mesh_file)
-            ind = np.random.randint(0, len(mesh.vertices), 2000)
-            points = mesh.vertices[ind]
             if self.transform:
                 # R = self.random_rotation_matrix()
                 # points = np.dot(points, R.T)
@@ -277,8 +278,11 @@ if __name__ == "__main__":
                                num_samples=2000,
                                num_sample_space=2000,
                                sigma_near=0.01)
-    dataloader = DataLoader(dataset, batch_size=8,shuffle=False, num_workers=8)
-    batch = next(iter(dataloader))
+    
+    encoder_dataset = EncoderDataset(root_dir='dataset/deformation')
+    dataloader = DataLoader(encoder_dataset, batch_size=1,shuffle=False, num_workers=0)
+    for data in dataloader:
+        print(data['points'].shape)
     pass
 
    

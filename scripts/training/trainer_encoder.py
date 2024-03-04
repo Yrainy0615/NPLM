@@ -81,7 +81,7 @@ class VoxelTrainer(object):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
-            path = self.checkpoint_path + '/latest_rot.tar'
+            path = self.checkpoint_path + '/latest_new.tar'
             torch.save({'epoch': epoch,
                         'encoder_shape_state_dict': self.encoder_shape.state_dict(),
                         'encoder_pose_state_dict': self.encoder_pose.state_dict(),
@@ -212,7 +212,7 @@ if __name__ == '__main__':
                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
                         udf_type='sdf',
                         d_in_spatial=3,)
-    checkpoint = torch.load('checkpoints/3dShape/latest_3d_0126.tar')
+    checkpoint = torch.load('checkpoints/shape/latest_new.tar')
     lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
     decoder_shape.eval()
@@ -227,7 +227,7 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/deform/exp-deform-dis__10000.tar')
+    checkpoint_deform = torch.load('checkpoints/deform_final/latest_wo_dis.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -235,7 +235,7 @@ if __name__ == '__main__':
     
     
     # dataset
-    dataset = EncoderDataset(root_dir = 'results/viz_space')
+    dataset = EncoderDataset(root_dir = 'dataset/deformation')
     trainset, valset = random_split(dataset, [int(0.8*len(dataset)), len(dataset)-int(0.8*len(dataset))])
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=8)
     valloader = DataLoader(valset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=8)

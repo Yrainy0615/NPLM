@@ -43,6 +43,9 @@ class DeformTrainer(object):
         self.lr = self.cfg['lr']
         self.lr_lat = self.cfg['lr_lat']
         self.checkpoint_path = self.cfg['save_path']
+        # add a scalar parameter and need to optimize it
+        self.phi = torch.nn.Parameter(torch.tensor(1.0, dtype=torch.float32, requires_grad=True))
+        self.optimizer_phi = optim.Adam(params=[self.phi], lr=0.01)
         
 
         
@@ -110,12 +113,13 @@ class DeformTrainer(object):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
-            path = self.checkpoint_path + '/latest_base.tar'
+            path = self.checkpoint_path + '/latest_wo_dis.tar'
             torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),  
-                        'latent_deform_state_dict': self.latent_deform.state_dict(),},
+                        'latent_deform_state_dict': self.latent_deform.state_dict(),
+                        'phi': self.phi,},
                        path)
        
         else:
@@ -126,6 +130,7 @@ class DeformTrainer(object):
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
                         'optimizer_lat_state_dict': self.optimizer_latent.state_dict(),
                         'latent_deform_state_dict': self.latent_deform.state_dict(),
+                        'phi': self.phi,
                        },
                        path)
        
@@ -133,9 +138,10 @@ class DeformTrainer(object):
         self.decoder.train()
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
+        self.optimizer_phi.zero_grad()
         loss_dict = compute_loss_corresp_forward(batch,
                                 decoder=self.decoder, device=self.device, latent_shape=self.latent_shape,
-                                latent_deform=self.latent_deform,cfg = self.cfg)
+                                latent_deform=self.latent_deform,phi=self.phi,cfg = self.cfg)
         loss_total = 0
         for key in loss_dict.keys():
             loss_total += self.cfg['lambdas'][key] * loss_dict[key]
@@ -149,6 +155,7 @@ class DeformTrainer(object):
             torch.nn.utils.clip_grad_norm_(self.latent_deform.parameters(), max_norm=self.cfg['grad_clip_lat'])
         self.optimizer_decoder.step()
         self.optimizer_latent.step()
+        self.optimizer_phi.step()
 
         loss_dict = {k: loss_dict[k].item() for k in loss_dict.keys()}
 
@@ -186,6 +193,7 @@ class DeformTrainer(object):
             for k in sum_loss_dict:
                 print_str += " " + k + " {:06.4f}".format(sum_loss_dict[k])
             print(print_str)
+            print('phi:', self.phi.item())
                 
             
                 

@@ -6,7 +6,7 @@ from .custom_layers import make_conv, ResBlock
 
 class ShapeEncoder(nn.Module):
 
-    def __init__(self, code_dim=512, res=128, output_dim=None):
+    def __init__(self, code_dim=128, res=128, output_dim=None):
         super(ShapeEncoder, self).__init__()
 
         fn_0 = 1
@@ -91,7 +91,7 @@ class ShapeEncoder(nn.Module):
 
 
 class PoseEncoder(nn.Module):
-    def __init__(self, code_dim=512, res=128, output_dim=None):
+    def __init__(self, code_dim=128, res=128, output_dim=None):
         super(PoseEncoder, self).__init__()
 
         fn_0 = 1

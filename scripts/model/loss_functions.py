@@ -133,7 +133,7 @@ def compute_sdf_3d_loss(batch, decoder, latent_idx,device):
                     'lat_reg':lat_mag.mean()}
     return ret_dict
 
-def compute_loss_corresp_forward(batch, decoder, latent_shape,latent_deform, device, cfg):
+def compute_loss_corresp_forward(batch, decoder, latent_shape,latent_deform, device, phi,cfg):
     batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
     shape_index  = batch_cuda['shape_idx']
     deform_code = latent_deform(batch['deform_idx'].to(device))
@@ -141,7 +141,7 @@ def compute_loss_corresp_forward(batch, decoder, latent_shape,latent_deform, dev
     glob_cond = torch.cat((deform_code, shape_code), dim=2)
     points_neutral = batch_cuda['points_neutral'].clone().detach().requires_grad_()
 
-    cond = glob_cond.repeat(1, points_neutral.shape[1], 1)
+    cond = deform_code.repeat(1, points_neutral.shape[1], 1)
     delta= decoder(points_neutral, cond)
     pred_posed = points_neutral + delta.squeeze()
     # mse loss
@@ -152,22 +152,22 @@ def compute_loss_corresp_forward(batch, decoder, latent_shape,latent_deform, dev
     loss_distance = torch.tensor(0)
     # distance regularizer
     if cfg['use_distance']:
-        distance = torch.norm(glob_cond,p=2,dim=-1)
+        distance = torch.norm(deform_code,p=2,dim=-1)
         delta_gt = points_posed - points_neutral
-        delta_norm = torch.norm(delta_gt,p=2,dim=(1,2)) /10
-        loss_distance = ((distance.squeeze()/delta_norm) - 1)**2
+        delta_norm = torch.norm(delta_gt,p=2,dim=(1,2)) 
+        loss_distance = ((distance.squeeze()/delta_norm) - phi)**2
     
 
     
     # latent code regularization
-    lat_mag = torch.norm(glob_cond, dim=-1)**2
+    lat_mag = torch.norm(deform_code, dim=-1)**2
     samps = (torch.rand(cond.shape[0], 100, 3, device=cond.device, dtype=cond.dtype) -0.5)*2.5
     delta = decoder(samps, cond[:, :100, :])
-    # loss_reg_zero = (delta**2).mean()
+    loss_reg_zero = (delta**2).mean()
     return {'corresp': loss_corresp.mean(),
-            'lat_reg': lat_mag.mean(),}
-          #  'loss_reg_zero': loss_reg_zero,}
-         #   'loss_distance': loss_distance.mean()}
+            'lat_reg': lat_mag.mean(),
+           'loss_reg_zero': loss_reg_zero,
+          'loss_distance': loss_distance.mean()}
 
 
 def compute_color_forward(batch, decoder, decoder_shape, latent_codes, latent_codes_shape, device, epoch=-1, exp_path=None):
@@ -226,7 +226,7 @@ def rgbd_loss(batch, encoder_shape,encoder_pose, encoder_camera,
     loss_shape_code = F.mse_loss(latent_shape_pred.squeeze(), shape_code_gt)
     loss_deform_code = F.mse_loss(latent_deform_pred.squeeze(), deform_code_gt)
     # test one mesh 
-    random_index= np.random.randint(0,30)
+    random_index= np.random.randint(0,10)
     canonical_pred = latent_to_mesh(decoder_shape, latent_shape_pred[random_index], device)
     if canonical_pred is None:
         canonical_mask_pred =None

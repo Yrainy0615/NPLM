@@ -7,18 +7,18 @@ shape_decoder:
 
 deform_decoder:
   decoder_hidden_dim: 1024
-  decoder_lat_dim: 256
+  decoder_lat_dim: 128
   decoder_nlayers: 8
   decoder_out_dim: 3
   use_mapping: False
 
 training:
   root_dir: dataset/deformation
-  save_name: deform-base
+  save_name: deform-wo-dis
   save_path: checkpoints/deform_final
   train_color: 1000
   use_nce: False
-  use_distance: False
+  use_distance: True
   batch_size: 64
   ckpt_interval: 1000
   ckpt_vis: 1000
@@ -29,7 +29,7 @@ training:
   siama_near: 0.01
   lambdas:
     corresp: 100.0
-   # loss_distance: 1
+    loss_distance: 5.0e-05
     lat_reg: 5.0e-05
     loss_reg_zero: 5.0e-05
     # loss_sdf: 1.0
