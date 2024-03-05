@@ -18,6 +18,7 @@ from scripts.model.fields import UDFNetwork
 from torch.utils.data import DataLoader
 import random
 from scripts.model.reconstruction import latent_to_mesh, deform_mesh, save_mesh_image_with_camera
+import trimesh
 
 CUDA_LAUNCH_BLOCKING=1
 
@@ -113,7 +114,7 @@ class DeformTrainer(object):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
-            path = self.checkpoint_path + '/latest_wo_dis.tar'
+            path = self.checkpoint_path + '/latest_dis_wo_shape.tar'
             torch.save({'epoch': epoch,
                         'decoder_state_dict': self.decoder.state_dict(),
                         'optimizer_decoder_state_dict': self.optimizer_decoder.state_dict(),
@@ -139,7 +140,7 @@ class DeformTrainer(object):
         self.optimizer_decoder.zero_grad()
         self.optimizer_latent.zero_grad()
         self.optimizer_phi.zero_grad()
-        loss_dict = compute_loss_corresp_forward(batch,
+        loss_dict, pred_posed, posed = compute_loss_corresp_forward(batch,
                                 decoder=self.decoder, device=self.device, latent_shape=self.latent_shape,
                                 latent_deform=self.latent_deform,phi=self.phi,cfg = self.cfg)
         loss_total = 0
@@ -162,7 +163,7 @@ class DeformTrainer(object):
         loss_dict.update({'loss': loss_total.item()})
            
 
-        return loss_dict    
+        return loss_dict    , pred_posed, posed
     
     
 
@@ -176,7 +177,7 @@ class DeformTrainer(object):
             sum_loss_dict = {k: 0.0 for k in self.cfg['lambdas']}
             sum_loss_dict.update({'loss':0.0})
             for batch in self.trainloader:
-                loss_dict = self.train_step(batch)
+                loss_dict, pred_posed, posed = self.train_step(batch)
                 loss_values = {key: value.item() if torch.is_tensor(value) else value for key, value in loss_dict.items()}
                 if self.args.use_wandb:
                     wandb.log(loss_values)
@@ -184,8 +185,15 @@ class DeformTrainer(object):
                     sum_loss_dict[k] += loss_dict[k]        
             if epoch % ckp_interval ==0 and epoch >0:
                 self.save_checkpoint(epoch,self.cfg['save_name'])
+                # save points
             self.save_checkpoint(epoch, save_name='latest')
-
+            # points = pred_posed[0].squeeze().detach().cpu().numpy()
+            # gt = posed[0].squeeze().detach().cpu().numpy()
+            # # save point cloud
+            # clouds = trimesh.points.PointCloud(points)
+            # clouds.export(os.path.join(self.cfg['save_path'],'deform_points_{}.ply'.format(epoch)))
+            # gt = trimesh.points.PointCloud(gt)
+            # gt.export(os.path.join(self.cfg['save_path'],'gt_points_{}.ply'.format(epoch)))
             n_train = len(self.trainloader)
             for k in sum_loss_dict.keys():
                 sum_loss_dict[k] /= n_train

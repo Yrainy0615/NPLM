@@ -13,13 +13,13 @@ deform_decoder:
   use_mapping: False
 
 training:
-  root_dir: dataset/deformation
-  save_name: deform-wo-dis
-  save_path: checkpoints/deform_final
+  root_dir: dataset/testset
+  save_name: inference
+  save_path: checkpoints/deform_new
   train_color: 1000
   use_nce: False
   use_distance: True
-  batch_size: 64
+  batch_size: 1
   ckpt_interval: 1000
   ckpt_vis: 1000
   grad_clip: 0.025
@@ -32,14 +32,16 @@ training:
     loss_distance: 5.0e-05
     lat_reg: 5.0e-05
     loss_reg_zero: 5.0e-05
+    loss_latent_shape: 1
+    loss_latent_deform: 1
     # loss_sdf: 1.0
     # lat_reg_shape: 0.1
     # lat_reg_deform: 0.1
-  lr: 0.0005
-  lr_decay_factor: 0.2
-  lr_decay_factor_lat: 0.2
-  lr_decay_interval: 1000
-  lr_decay_interval_lat: 1000
+  lr: 0.0001
+  lr_decay_factor: 0.5
+  lr_decay_factor_lat: 0.5
+  lr_decay_interval: 600
+  lr_decay_interval_lat: 600
   lr_lat: 0.0005
   npoints_decoder: 1000
   shape_ckpt: CHECKPOINT_EPOCH

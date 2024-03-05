@@ -11,6 +11,7 @@ from scripts.model.reconstruction import create_grid_points_from_bounds
 from scipy.spatial import cKDTree as KDTree
 import torch
 from scipy.ndimage import rotate
+from matplotlib import pyplot as plt
 
 
 def uniform_ball(n_points, rad=1.0):
@@ -36,7 +37,7 @@ class LeafDeformDataset(Dataset):
         self.root_dir = 'dataset/deformation'
         for dirpath, dirnames, filenames in os.walk(self.root_dir):
             for filename in filenames:
-                if filename.endswith('.npy') and not 'neutral' in filename:
+                if filename.endswith('.npy') and 'deform' in filename:
                     self.all_sample.append(os.path.join(dirpath, filename))
         self.all_sample.sort()
     def __len__(self):
@@ -54,6 +55,7 @@ class LeafDeformDataset(Dataset):
         sup_idx = np.random.randint(0, point_corresp.shape[0], self.n_supervision_points_face)
         sup_point_neutral = point_corresp[sup_idx,:3]
         sup_posed = point_corresp[sup_idx,3:] 
+        # visualize neutral and  3d posed points
         neutral = sup_point_neutral
         pose = sup_posed
         return {

@@ -81,7 +81,7 @@ class VoxelTrainer(object):
         if not os.path.exists(self.checkpoint_path):
             os.makedirs(self.checkpoint_path)
         if save_name == 'latest':
-            path = self.checkpoint_path + '/latest_new.tar'
+            path = self.checkpoint_path + '/encoder-new.tar'
             torch.save({'epoch': epoch,
                         'encoder_shape_state_dict': self.encoder_shape.state_dict(),
                         'encoder_pose_state_dict': self.encoder_pose.state_dict(),
@@ -198,7 +198,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    config = 'NPLM/scripts/configs/npm_def.yaml'
+    config = 'NPLM/scripts/configs/npm_deform.yaml'
     CFG = yaml.safe_load(open(config, 'r')) 
     if args.use_wandb:
         wandb.init(project='NPLM', name =args.wandb)
@@ -227,7 +227,7 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/deform_final/latest_wo_dis.tar')
+    checkpoint_deform = torch.load('checkpoints/deform_new/deform__1000.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -240,10 +240,7 @@ if __name__ == '__main__':
     trainloader = DataLoader(trainset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=8)
     valloader = DataLoader(valset, batch_size=CFG['training']['batch_size'], shuffle=True, num_workers=8)
     print('data loaded: {} samples'.format(len(trainloader)))
-    # model initialization
-    # encoder_3d = PCAutoEncoder(point_dim=3)
-    # encoder_3d.to(device)
-    # encoder_3d.train(
+
     encoder_shape  = ShapeEncoder()
     encoder_pose = PoseEncoder()
     encoder_shape = encoder_shape.to(device)

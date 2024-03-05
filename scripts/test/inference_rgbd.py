@@ -27,7 +27,7 @@ import trimesh
 import numpy as np
 from scripts.registration.leaf_axis_determination import LeafAxisDetermination
 from scripts.test.leaf_pose import find_rotation_matrix
-import h5py
+# import h5py
 from scripts.dataset.rgbd_dataset import rgbd_to_voxel
 from scripts.test.leaf_pose import visualize_points_and_axes
 
@@ -80,8 +80,12 @@ class Predictor(object):
     
     def predict(self, data, lat_shape_init=None):
             # initialization
-        occupancy_grid = torch.from_numpy(data['occupancy_grid']).to(self.device).unsqueeze(0).float()
-        points = torch.from_numpy(data['points']).to(self.device).unsqueeze(0).float()
+        if data['occupancy_grid'].device.type =='cuda':
+            occupancy_grid = data['occupancy_grid']
+            points = data['points']
+        else:
+            occupancy_grid = torch.from_numpy(data['occupancy_grid']).to(self.device).unsqueeze(0).float()
+            points = torch.from_numpy(data['points']).to(self.device).unsqueeze(0).float()
         latent_shape_pred = self.encoder_shape(occupancy_grid)
         if lat_shape_init is not None:
             latent_shape_pred = lat_shape_init
@@ -95,7 +99,7 @@ class Predictor(object):
         # deformed_mesh.export('{}.obj'.format(mesh_name))
         
         # optimization
-        latent_shape_optimized, latent_deform_optimized, canonical_imgs, deform_imgs, = self.optim_latent(
+        latent_shape_optimized, latent_deform_optimized, canonical_imgs, deform_imgs, chamfer= self.optim_latent(
                                     latent_shape_pred.detach().requires_grad_(), 
                                     latent_pose_pred.detach().requires_grad_(), points)
         
@@ -104,19 +108,26 @@ class Predictor(object):
         deformed_mesh_optimized = deform_mesh(canonical_mesh_optimized, self.decoder_deform, latent_deform_optimized)
         # canonical_mesh_optimized.export('{}_canonical_optimized.obj'.format(mesh_name))
         # deformed_mesh_optimized.export('{}_optimized.obj'.format(mesh_name))
-        return canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_imgs, deform_imgs
+        return canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_imgs, deform_imgs, chamfer
     
     def optim_latent(self, latent_shape_init, latent_deform_init, points):
+        # create a scale parameter for verts
+        scale = torch.tensor([1.0], requires_grad=True, dtype=torch.float32, device=torch.device('cuda:0'))
         optimizer_shape = optim.Adam([latent_shape_init], lr=1e-3)
         optimizer_deform = optim.Adam([latent_deform_init], lr=1e-3)
+        # add a weight decay every 10 iterations
+        # first 5 epoch for scale optimization
+        optimizer_scale = optim.Adam([scale], lr=1e-2)
+
+            
         img_nps = []
         deform_nps = []
-        for i in range(50):
+        for i in range(30):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
-            verts = mesh.vertices
-            verts = normalize_verts(verts)
+            verts = mesh.vertices 
+            # verts = normalize_verts(verts)
             xyz_upstream = torch.tensor(verts.astype(float), requires_grad = True, dtype=torch.float32, device=torch.device('cuda:0'))
             delta_verts = self.decoder_deform(torch.from_numpy(verts).float().to(device), latent_deform_init.squeeze(0).repeat(mesh.vertices.shape[0], 1))
             """
@@ -140,8 +151,10 @@ class Predictor(object):
             lat_reg_deform = torch.norm(latent_deform_init, dim=-1) ** 2
 
             # print losses
-            print('shape iter:{}  loss_chamfer: {}'.format(i,loss_chamfer[0]))
-            loss_all = 10*loss + lat_reg_shape + lat_reg_deform
+            print('shape iter:{}  loss_chamfer: {}, shape_reg:{}, deform_reg:{}'.format(i,loss_chamfer[0], lat_reg_shape.item(), lat_reg_deform.item()))
+            print("delta_verts:{}".format(delta_verts.mean()))
+            #print('shape iter:{}  loss_chamfer: {}'.format(i,loss_chamfer[0]))
+            loss_all = loss #+ lat_reg_shape + lat_reg_deform
             loss_all.backward()
             optimizer_deform.step()
             # now store upstream gradients
@@ -163,10 +176,10 @@ class Predictor(object):
             loss_backward = torch.sum(dL_ds_i * pred_sdf)
             loss_backward.backward()
             # and update params
-            optimizer_shape.step()
+            #optimizer_shape.step()
             img_nps.append(img_np)
             deform_nps.append(deform_img_np)
-        return latent_shape_init, latent_deform_init, img_nps, deform_nps
+        return latent_shape_init, latent_deform_init, img_nps, deform_nps, loss_chamfer[0]
 
 if __name__ == '__main__':       
     parser = argparse.ArgumentParser(description='RUN Leaf NPM')
@@ -188,11 +201,11 @@ if __name__ == '__main__':
         wandb.config.update(CFG)
     
     # dataset
-    # trainset = EncoderDataset(root_dir='results/viz_space')
-    # trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=2)
-    trainloader = None
+    trainset = EncoderDataset(root_dir='dataset/testset')
+    trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=2)
+    # trainloader = None
     # networl initialization
-    checkpoint_encoder = torch.load('checkpoints/inference/encoder_soybean.tar')
+    checkpoint_encoder = torch.load('checkpoints/inference/latest_new.tar')
     encoder_shape = ShapeEncoder()
     encoder_shape.load_state_dict(checkpoint_encoder['encoder_shape_state_dict'])
     encoder_shape.to(device)
@@ -219,7 +232,7 @@ if __name__ == '__main__':
                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
                         udf_type='sdf',
                         d_in_spatial=3,)
-    checkpoint = torch.load('checkpoints/3dShape/latest_3d_0126.tar')
+    checkpoint = torch.load('checkpoints/shape/latest_new.tar')
     lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
     decoder_shape.eval()
@@ -234,7 +247,7 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/deform/deform_soybean.tar')
+    checkpoint_deform = torch.load('checkpoints/deform_new/deform__1000.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -251,13 +264,24 @@ if __name__ == '__main__':
     grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
     # predict
     predictor = Predictor(encoder_shape, encoder_pose, encoder_2d, cameranet, trainloader, lat_idx_all, lat_deform_all, decoder_shape, decoder_deform, generator, CFG, device)
-    data_source = 'denseleaf'
+    data_source = 'dataset'
     z_axis_canonical = np.array([0, 0, 1])
     x_axis_canonical = np.array([1, 0, 0])
     y_axis_canonical = np.array([0, 1, 0])
     if data_source == 'dataset':
+        save_folder = 'results/testset'
+        chamfer_result = []
         for i, batch in enumerate(trainloader):
-            canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_img, deform_img = predictor.predict(batch)
+            batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            deform_index = batch_cuda['deform_idx']
+            shape_index = batch_cuda['shape_idx']
+            canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_img, deform_img, chamfer = predictor.predict(batch_cuda)
+            save_name_opt = str(int(shape_index.item())) + '_' + str(int(deform_index.item())) +'_optimized.obj'
+            save_name = str(int(shape_index.item())) + '_' + str(int(deform_index.item())) +'_pred.obj'
+            deformed_mesh_optimized.export(os.path.join(save_folder, save_name))
+            deformed_mesh.export(os.path.join(save_folder, save_name_opt))
+            chamfer_result.append(chamfer)
+    print('mean chamfer distance:{}'.format(np.mean(chamfer_result)))
     
     if data_source == 'raw':
         data_path = 'LeafSurfaceReconstruction/data/sugarbeet'

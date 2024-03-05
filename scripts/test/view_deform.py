@@ -116,7 +116,7 @@ if __name__ == "__main__":
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
     
-    checkpoint_deform = torch.load('checkpoints/deform_final/latest_base.tar')
+    checkpoint_deform = torch.load('checkpoints/deform_new/latest_dis_wo_shape.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
-    mode =   'deform'
+    mode =   'teaser'
  
     if mode=='3dshape':
         # random 50 index from latent space
@@ -142,7 +142,7 @@ if __name__ == "__main__":
                 
 
 if mode == 'deform':
-    save_dir = 'results/viz_new'
+    save_dir = 'results/viz_space'
     random_shape_idx = random.sample(range(0, lat_idx_all_3d.shape[0]), 10)
     random_deform_idx = random.sample(range(0, lat_deform_all.shape[0]), 100)
     latent_shape = lat_idx_all_3d[2]
@@ -155,17 +155,37 @@ if mode == 'deform':
         save_name = '{}.obj'.format(shape_idx)
         #mesh.export(os.path.join(save_dir, save_name))
         mesh.vertices =normalize_verts(mesh.vertices)
-        # mesh_pytorch3d = Meshes(verts=torch.tensor(mesh.vertices).unsqueeze(0).float(), faces=torch.tensor(mesh.faces).unsqueeze(0))
-        # mesh_pytorch3d = mesh_pytorch3d.to(device)
-        # canonical_mask = renderer.get_mask(mesh_pytorch3d)
-        # mesh_plane = img_to_leaf(canonical_mask)
-        # mesh_plane.export(os.path.join(save_dir, '{}_plane.obj').format(shape_idx))
-        #print('mesh {} saved'.format(save_name))
+
         latent_cond = torch.cat((latent_shape, latent_deform), dim=0)
         mesh_deform = deform_mesh(mesh, decoder_deform, latent_deform)
         save_name_deform = '{}_{}.obj'.format(shape_idx, deform_idx)
         mesh_deform.export(os.path.join(save_dir, save_name_deform))
         print('deformed mesh {} saved'.format(save_name_deform))
+
+
+if mode == "teaser":
+    save_dir = 'results/teaser'
+    sample_idx = [0,1,4,11,12,30,55,223]
+    random_deform_idx = random.sample(range(0, lat_deform_all.shape[0]), 50)
+    for i in range(8):
+        shape_idx = sample_idx[i]
+        latent_shape = lat_idx_all_3d[shape_idx]
+        mesh = trimesh.load('dataset/leaf_classification/canonical_mesh/{}.obj'.format(shape_idx))
+
+        deform_idx = 770
+        latent_deform = lat_deform_all[deform_idx]
+        latent_cond = torch.cat((latent_shape, latent_deform), dim=0)   
+        # save_name = '{}.obj'.format(shape_idx)
+        # print('shape mesh {} saved'.format(save_name))
+        mesh_deform = deform_mesh(mesh, decoder_deform, latent_deform)
+        save_name_deform = '{}_{}.obj'.format(shape_idx, deform_idx)
+        mesh_deform.export(os.path.join(save_dir, save_name_deform))
+        print('deformed mesh {} saved'.format(save_name_deform))
+        # save_mesh_image_with_camera(mesh.vertices, mesh.faces, filename=os.path.join(save_dir, '{}.png'.format(shape_idx)))
+        # save_mesh_image_with_camera(mesh_deform.vertices, mesh_deform.faces, filename=os.path.join(save_dir, '{}_{}.png'.format(shape_idx, deform_idx)))
+        # print('image saved')
+print('done')
+        
 
             
 

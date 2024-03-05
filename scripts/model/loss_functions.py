@@ -167,7 +167,7 @@ def compute_loss_corresp_forward(batch, decoder, latent_shape,latent_deform, dev
     return {'corresp': loss_corresp.mean(),
             'lat_reg': lat_mag.mean(),
            'loss_reg_zero': loss_reg_zero,
-          'loss_distance': loss_distance.mean()}
+          'loss_distance': loss_distance.mean()}, pred_posed,points_posed
 
 
 def compute_color_forward(batch, decoder, decoder_shape, latent_codes, latent_codes_shape, device, epoch=-1, exp_path=None):
