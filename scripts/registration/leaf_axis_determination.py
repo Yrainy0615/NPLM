@@ -53,20 +53,20 @@ class LeafAxisDetermination(object):
         # so we calclate the the 2nd pc by cross calculation of 1st pc and 3rd pc
         # this calculation is not neccesary for leaf flattening, but we calculate it to check the 
         # calculation is correct by visualizing the vectors.
-        component_2 = np.cross(component_1, component_3) * -1.0
+        #component_2 = np.cross(component_1, component_3) * -1.0
 
         # assure the component_1 vector (l-axis) to point the centroid
         check_component_1_radian = calculate_radian(centroid[0:2], component_1[0:2])
-        if check_component_1_radian >= np.pi / 2.0:
-            component_1 = -1.0 * component_1
-            component_3 = -1.0 * component_3 
-            print("Component 1 has been reversed.") 
+        # if check_component_1_radian >= np.pi / 2.0:
+        #     component_1 = -1.0 * component_1
+        #     component_3 = -1.0 * component_3 
+        #     print("Component 1 has been reversed.") 
         
         check_component_3_radian = calculate_radian(np.array([0.0, 0.0, 1.0]), component_3)
-        if check_component_3_radian >= np.pi / 2.0:
-            component_2 = -1.0 * component_2
-            component_3 = -1.0 * component_3
-            print("Component 3 has been reversed.")
+        # if check_component_3_radian >= np.pi / 2.0:
+        #     component_2 = -1.0 * component_2
+        #     component_3 = -1.0 * component_3
+        #     print("Component 3 has been reversed.")
         
         return component_1, component_2, component_3
         
@@ -89,7 +89,7 @@ class LeafAxisDetermination(object):
         l_axis, component_2, component_3 = self.pca_pointcloud(self.p_init)
 
         # 3
-        # self.p_init = self.p_init - np.mean(self.p_init, axis=0)
+        self.p_init = self.p_init - np.mean(self.p_init, axis=0)
 
         # 4
         # we use the component_3 we calculated above as the d_axis
@@ -114,7 +114,7 @@ class LeafAxisDetermination(object):
         #     res = [executor.submit(surface_area_calculation, l_axis, d_axis, bins, bin_range, self.p_init, i)
         #             for i in range(180)]
         # check every 10 degrees
-        for i in range(0, 180, 10):
+        for i in range(0, 180):
             self.surface_area_list.append(surface_area_calculation(l_axis, d_axis, bins, bin_range, self.p_init, i))
         
             # for future in as_completed(res):
@@ -122,15 +122,16 @@ class LeafAxisDetermination(object):
         
         # 7
         surface_area = np.array(self.surface_area_list)
-        smallest_area_angle = np.argmin(surface_area)
+        min_index = surface_area[:, 0].argmin() 
 
-        h_axis = rotate_vector_by_degree(l_axis, d_axis, smallest_area_angle)
+
+        h_axis = rotate_vector_by_degree(l_axis, d_axis, 30)
 
         check_h_axis_radian = calculate_radian(h_axis, np.array([0.0, 0.0, 1.0]))
-        if check_h_axis_radian >= np.pi / 2.0:
-            print("h axis is not pointing leaf top. Reverse it.")
-            h_axis = h_axis * -1.0
+        # if check_h_axis_radian >= np.pi / 2.0:
+        #     print("h axis is not pointing leaf top. Reverse it.")
+        #     h_axis = h_axis * -1.0
 
         w_axis = np.cross(l_axis, h_axis) 
 
-        return w_axis, l_axis, h_axis, self.p_init
+        return w_axis, l_axis, h_axis,  component_2, component_3

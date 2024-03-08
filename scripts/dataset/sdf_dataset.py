@@ -7,12 +7,30 @@ import json
 import cv2
 import igl
 import trimesh
+import sys
+sys.path.append('NPLM')
 from scripts.model.reconstruction import create_grid_points_from_bounds
 from scipy.spatial import cKDTree as KDTree
 import torch
 from scipy.ndimage import rotate
 from matplotlib import pyplot as plt
 
+def av_dist(array1, array2):
+    """
+    arguments:
+        array1, array2: both size: (num_points, num_feature)
+    returns:
+        distances: size: (1,)
+    """
+    distances = np.sum(np.square(np.expand_dims(array1, axis=1) - np.expand_dims(array2, axis=0)), axis=-1)
+    distances = np.min(distances, axis=1)
+    distances = np.mean(distances)
+    return distances
+
+def chamfer_distance(pointsA, pointsB):
+    dist_A = av_dist(pointsA, pointsB)
+    dist_B = av_dist(pointsB, pointsA) 
+    return dist_A + dist_B
 
 def uniform_ball(n_points, rad=1.0):
     angle1 = np.random.uniform(-1, 1, n_points)
@@ -34,10 +52,10 @@ class LeafDeformDataset(Dataset):
                  ):
         self.n_supervision_points_face = n_supervision_points_face
         self.all_sample = []
-        self.root_dir = 'dataset/deformation'
+        self.root_dir = 'deformation'
         for dirpath, dirnames, filenames in os.walk(self.root_dir):
             for filename in filenames:
-                if filename.endswith('.npy') and 'deform' in filename:
+                if filename.endswith('.npy'):
                     self.all_sample.append(os.path.join(dirpath, filename))
         self.all_sample.sort()
     def __len__(self):
@@ -58,6 +76,9 @@ class LeafDeformDataset(Dataset):
         # visualize neutral and  3d posed points
         neutral = sup_point_neutral
         pose = sup_posed
+        # chamfer distance between neutral and posed
+        chamfer=chamfer_distance(neutral, pose)
+        print(chamfer)
         return {
             'points_neutral': neutral,
             'points_posed': pose,
@@ -275,16 +296,17 @@ class EncoderDataset(Dataset):
 if __name__ == "__main__":
     cfg_path ='NPLM/scripts/configs/npm_3d.yaml'
     CFG = yaml.safe_load(open(cfg_path, 'r'))
-    # dataset = LeafDeformDataset(n_supervision_points_face=2000)
-    dataset = LeafSDF3dDataset(root_dir=CFG['training']['root_dir'],
-                               num_samples=2000,
-                               num_sample_space=2000,
-                               sigma_near=0.01)
+    dataset = LeafDeformDataset(n_supervision_points_face=2000)
+    #dataset = LeafSDF3dDataset(root_dir=CFG['training']['root_dir'],
+                            #    num_samples=2000,
+                            #    num_sample_space=2000,
+                            #    sigma_near=0.01)
     
-    encoder_dataset = EncoderDataset(root_dir='dataset/deformation')
-    dataloader = DataLoader(encoder_dataset, batch_size=1,shuffle=False, num_workers=0)
+    #encoder_dataset = EncoderDataset(root_dir='dataset/deformation')
+    dataloader = DataLoader(dataset, batch_size=1,shuffle=False, num_workers=1)
     for data in dataloader:
-        print(data['points'].shape)
+        #print(data['points'].shape)
+        print(data['deform_idx'])
     pass
 
    

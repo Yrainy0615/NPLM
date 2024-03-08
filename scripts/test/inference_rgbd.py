@@ -91,9 +91,11 @@ class Predictor(object):
             latent_shape_pred = lat_shape_init
         else:
             latent_shape_pred =self.encoder_shape(occupancy_grid)
+        latent_shape_mean = torch.mean(self.latent_shape, dim=0)
+        latent_deform_mean = torch.mean(self.latent_deform, dim=0)
         latent_pose_pred = self.encoder_pose(occupancy_grid)
         canonical_mesh = latent_to_mesh(self.decoder_shape, latent_shape_pred, self.device)
-        deformed_mesh = deform_mesh(canonical_mesh, self.decoder_deform, latent_pose_pred)
+        deformed_mesh = deform_mesh(canonical_mesh, self.decoder_deform, latent_deform_mean)
 
         # canonical_mesh.export('{}_canonical.obj'.format(mesh_name))
         # deformed_mesh.export('{}.obj'.format(mesh_name))
@@ -122,7 +124,7 @@ class Predictor(object):
             
         img_nps = []
         deform_nps = []
-        for i in range(30):
+        for i in range(20):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
@@ -156,7 +158,7 @@ class Predictor(object):
             #print('shape iter:{}  loss_chamfer: {}'.format(i,loss_chamfer[0]))
             loss_all = loss #+ lat_reg_shape + lat_reg_deform
             loss_all.backward()
-            optimizer_deform.step()
+            # optimizer_deform.step()
             # now store upstream gradients
             dL_dx_i = xyz_upstream.grad
 
@@ -176,7 +178,7 @@ class Predictor(object):
             loss_backward = torch.sum(dL_ds_i * pred_sdf)
             loss_backward.backward()
             # and update params
-            #optimizer_shape.step()
+            optimizer_shape.step()
             img_nps.append(img_np)
             deform_nps.append(deform_img_np)
         return latent_shape_init, latent_deform_init, img_nps, deform_nps, loss_chamfer[0]
@@ -205,7 +207,7 @@ if __name__ == '__main__':
     trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=2)
     # trainloader = None
     # networl initialization
-    checkpoint_encoder = torch.load('checkpoints/inference/latest_new.tar')
+    checkpoint_encoder = torch.load('checkpoints/encoder_0304.tar')
     encoder_shape = ShapeEncoder()
     encoder_shape.load_state_dict(checkpoint_encoder['encoder_shape_state_dict'])
     encoder_shape.to(device)
@@ -232,7 +234,7 @@ if __name__ == '__main__':
                         n_layers=CFG['shape_decoder']['decoder_nlayers'],
                         udf_type='sdf',
                         d_in_spatial=3,)
-    checkpoint = torch.load('checkpoints/shape/latest_new.tar')
+    checkpoint = torch.load('checkpoints/shape.tar')
     lat_idx_all = checkpoint['latent_idx_state_dict']['weight']
     decoder_shape.load_state_dict(checkpoint['decoder_state_dict'])
     decoder_shape.eval()
@@ -247,7 +249,7 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/deform_new/deform__1000.tar')
+    checkpoint_deform = torch.load('checkpoints/deform_npm.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -269,7 +271,7 @@ if __name__ == '__main__':
     x_axis_canonical = np.array([1, 0, 0])
     y_axis_canonical = np.array([0, 1, 0])
     if data_source == 'dataset':
-        save_folder = 'results/testset'
+        save_folder = 'results/test-wo-poseopt'
         chamfer_result = []
         for i, batch in enumerate(trainloader):
             batch_cuda = {k: v.to(device).float() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
