@@ -100,7 +100,7 @@ if __name__ == "__main__":
                          d_in_spatial=3,
                          udf_type='sdf')
     
-    checkpoint_shape = torch.load('checkpoints/shape/latest_new.tar')
+    checkpoint_shape = torch.load('checkpoints/shape.tar')
     lat_idx_all_3d = checkpoint_shape['latent_idx_state_dict']['weight']
     decoder_shape_3d.load_state_dict(checkpoint_shape['decoder_state_dict'])
     decoder_shape_3d.eval()
@@ -116,7 +116,7 @@ if __name__ == "__main__":
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
     
-    checkpoint_deform = torch.load('checkpoints/deform_new/latest_dis_wo_shape.tar')
+    checkpoint_deform = torch.load('checkpoints/deform.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)    
-    mode =   'teaser'
+    mode =   'test'
  
     if mode=='3dshape':
         # random 50 index from latent space
@@ -172,7 +172,7 @@ if mode == "teaser":
         latent_shape = lat_idx_all_3d[shape_idx]
         mesh = trimesh.load('dataset/leaf_classification/canonical_mesh/{}.obj'.format(shape_idx))
 
-        deform_idx = 770
+        deform_idx = 223
         latent_deform = lat_deform_all[deform_idx]
         latent_cond = torch.cat((latent_shape, latent_deform), dim=0)   
         # save_name = '{}.obj'.format(shape_idx)
@@ -186,13 +186,56 @@ if mode == "teaser":
         # print('image saved')
 print('done')
         
-
-            
+if mode == "test":
+    test_dir = 'dataset/testset'
+    save_dir = 'results/test_ours'
+    test_files = [f for f in os.listdir(test_dir) if f.endswith('.obj')]
+    for file in test_files:
+        basename = file.split('.')[0]
+        shape_index = int(basename.split('_')[0])
+        # add a noise to the latent
+        noise_shape = torch.randn(lat_idx_all_3d[shape_index].shape) * 0.01
+        noise_shape = noise_shape.to(device)
+        latent_shape = lat_idx_all_3d[shape_index] + noise_shape
+        deform_index=int(basename.split('_')[1])
+        noise_deform = torch.randn(lat_deform_all[deform_index].shape) * 0.01
+        noise_deform = noise_deform.to(device)
+        latent_deform = lat_deform_all[deform_index] + noise_deform
+        mesh = latent_to_mesh(decoder_shape_3d,latent_shape , device)
+        mesh_deform = deform_mesh(mesh, decoder_deform, latent_deform)
+        save_name = '{}_{}.obj'.format(shape_index, deform_index)
+        mesh_deform.export(os.path.join(save_dir, save_name))
 
     
+if mode == "interpolation":
+    # shape inter polation
+    save_dir = 'results/interpolation'
+    shape_idx_s = 21
+    shape_idx_e = 90
+    lat_shape_s = lat_idx_all_3d[shape_idx_s]
+    lat_shape_e = lat_idx_all_3d[shape_idx_e]
+    # linear interpolation between two shapes
+    # for i in range(10):
+    #     alpha = i/10
+    #     lat_shape = lat_shape_s * (1-alpha) + lat_shape_e * alpha
+    #     mesh = latent_to_mesh(decoder_shape_3d,lat_shape , device)
+    #     save_name = 'shape_{}.obj'.format(i)
+    #     mesh.export(os.path.join(save_dir, save_name))
+    #     print('shape mesh {} saved'.format(save_name))
+    
 
-
-
+    #deform interpolation
+    latent_shape = lat_idx_all_3d[10]
+    deform_idx_e = 766
+    deform_idx_s = 766
+    lat_deform_s = lat_deform_all.mean()
+    lat_deform_e = lat_deform_all[deform_idx_e]
+    mesh = latent_to_mesh(decoder_shape_3d,latent_shape , device)
+    for i in range(10):
+        alpha = i/10
+        lat_deform = lat_deform_s * (1-alpha) + lat_deform_e * alpha
+        deform = deform_mesh(mesh, decoder_deform, lat_deform)
+        deform.export(os.path.join(save_dir, 'deform_{}.obj'.format(i)))
 
                 
 
