@@ -19,6 +19,7 @@ from scripts.model.inference_encoder import ShapeEncoder, PoseEncoder
 from pytorch3d.loss import chamfer_distance
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer import TexturesVertex, look_at_view_transform, FoVPerspectiveCameras
+import cv2
 from matplotlib import pyplot as plt
 import imageio  
 import pandas as pd
@@ -80,7 +81,7 @@ class Predictor(object):
     
     def predict(self, data, lat_shape_init=None):
             # initialization
-        if data['occupancy_grid'].device.type =='cuda':
+        if type(data['occupancy_grid']) =='torch':
             occupancy_grid = data['occupancy_grid']
             points = data['points']
         else:
@@ -122,7 +123,7 @@ class Predictor(object):
             
         img_nps = []
         deform_nps = []
-        for i in range(30):
+        for i in range(50):
             optimizer_shape.zero_grad()
             optimizer_deform.zero_grad()
             mesh = latent_to_mesh(self.decoder_shape, latent_shape_init, self.device)
@@ -247,7 +248,7 @@ if __name__ == '__main__':
                          d_in_spatial=3,
                          geometric_init=False,
                          use_mapping=CFG['deform_decoder']['use_mapping'])
-    checkpoint_deform = torch.load('checkpoints/deform_new/deform__1000.tar')
+    checkpoint_deform = torch.load('eccv-checkpoints/deform.tar')
     lat_deform_all = checkpoint_deform['latent_deform_state_dict']['weight']
     decoder_deform.load_state_dict(checkpoint_deform['decoder_state_dict'])
     decoder_deform.eval()
@@ -264,10 +265,11 @@ if __name__ == '__main__':
     grid_points = create_grid_points_from_bounds(mini, maxi, resolution)
     # predict
     predictor = Predictor(encoder_shape, encoder_pose, encoder_2d, cameranet, trainloader, lat_idx_all, lat_deform_all, decoder_shape, decoder_deform, generator, CFG, device)
-    data_source = 'dataset'
+    data_source = 'denseleaf'
     z_axis_canonical = np.array([0, 0, 1])
     x_axis_canonical = np.array([1, 0, 0])
     y_axis_canonical = np.array([0, 1, 0])
+    
     if data_source == 'dataset':
         save_folder = 'results/testset'
         chamfer_result = []
@@ -281,7 +283,8 @@ if __name__ == '__main__':
             deformed_mesh_optimized.export(os.path.join(save_folder, save_name))
             deformed_mesh.export(os.path.join(save_folder, save_name_opt))
             chamfer_result.append(chamfer)
-    print('mean chamfer distance:{}'.format(np.mean(chamfer_result)))
+        print('mean chamfer distance:{}'.format(np.mean(chamfer_result)))
+    
     
     if data_source == 'raw':
         data_path = 'LeafSurfaceReconstruction/data/sugarbeet'
@@ -327,65 +330,50 @@ if __name__ == '__main__':
             imageio.mimsave('deform_img_{}.gif'.format(i), deform_img, 'GIF', fps=5)
         
     if data_source == 'denseleaf':
-        save_folder = 'results/rgbd'
-        test_data= 'views/0.hdf5'
-        latent_shape_init = lat_idx_all[100]
-        with h5py.File(test_data, 'r') as f:
-        # print items in the file
-            color = np.array(f['colors'])
-            depth = np.array(f['depth'])
-            normal = np.array(f['normals'])
-            categort_id_segmaps = np.array(f['category_id_segmaps'])
-            instance_segmaps = np.array(f['instance_segmaps'])
-            instance_attributes = np.array(f['instance_attribute_maps'])
-        
-        # get instance mask from instance_segmaps by different colors
-        unique_values = np.unique(instance_segmaps)
-        mask_ori = {}
-        # Iterate over each unique value (excluding 0 if it's the background)
-        for value in unique_values:
-            if value != 0:  # Skip the background
-                # Create a mask for the current value
-                mask_ori[value] = (instance_segmaps == value)
+        save_folder = 'test_result'
+        base_path = "test_data"
+        image_path = os.path.join(base_path, "image.jpg")
+        depth_path = os.path.join(base_path, "depth.jpg")
+
+        # Load the image and depth files
+        image = cv2.imread(image_path)
+        depth = cv2.imread(depth_path)
+
+        # Initialize lists to store results
         colors = []
-        normals = []
         depths = []
-        masks = []
-        locations = []
-        # get corresponding color for each instance mask
-        for key in mask_ori:
-            mask = mask_ori[key]
-            mask = mask.astype(np.uint8)
-            mask = mask[:,:, np.newaxis ]
-            # get the color for the mask
-            color_single  = color * mask
-            normal_single = normal * mask
-            depth_single = depth * mask.squeeze()
-            color_resized, mask_resized, normal_resized, depth_resized = crop_and_resize(mask, color_single, normal_single, depth_single)
-            colors.append(color_resized)
-            normals.append(normal_resized)
-            depths.append(depth_resized)
-            # save location is 3*1 array , as (x,y,z) z is the depth
-            location =np.ones([3])
-            location[0], location[1] = np.mean(np.where(mask), axis=1)[0], np.mean(np.where(mask), axis=1)[1]
-            location[2] = depth_single[int(location[0]), int(location[1])]
-            locations.append(np.mean(np.where(mask), axis=1))
-            
+        masknames = []
+        # Process each mask
+        mask_folder = os.path.join(base_path, "masks")
+        for mask_file in os.listdir(mask_folder):
+            mask_path = os.path.join(mask_folder, mask_file)
+            mask = cv2.imread(mask_path, 0)  # Load as grayscale
+            maskname = mask_file.split('.')[0]
+            # Apply mask
+            masked_image = cv2.bitwise_and(image, image, mask=mask)
+            masked_depth = cv2.bitwise_and(depth, depth, mask=mask)
+
+            # Append to lists
+            colors.append(masked_image)
+            depths.append(masked_depth)
+            masknames.append(maskname)
+        
 
         for i in range(len(colors)):
             rgb = colors[i]
             depth = depths[i]
-            normal = normals[i]
             occupancy_grid, point_cloud = rgbd_to_voxel(rgb=rgb, depth=depth,grid_points=grid_points)
+            pts = trimesh.points.PointCloud(vertices=point_cloud)
+            pts.export(os.path.join(save_folder, '{}_pts.ply').format(masknames[i]))
             leafAxisDetermination = LeafAxisDetermination(point_cloud)
             y_axis, x_axis, z_axis, new_points = leafAxisDetermination.process()
             R_w2c = find_rotation_matrix(np.array([x_axis_canonical,  y_axis_canonical,z_axis_canonical]), np.array([x_axis,  y_axis,z_axis]))
             R_c2w  = np.linalg.inv(R_w2c)
             point_cloud_canonical= np.matmul(new_points, R_w2c.T)
-
+            imgname =   masknames[i]
             # predict & inference
             data = {'occupancy_grid': occupancy_grid, 'points': point_cloud_canonical}
-            canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_img, deform_img = predictor.predict(data, lat_shape_init=latent_shape_init)
+            canonical_mesh, deformed_mesh, canonical_mesh_optimized, deformed_mesh_optimized, canonical_img, deform_img, chamfer = predictor.predict(data)
             # visualize_points_and_axes(point_cloud_canonical, canonical_mesh.vertices,origin=np.mean(canonical_mesh.vertices, axis=0), x_axis=x_axis_canonical, y_axis=y_axis_canonical, z_axis=z_axis_canonical)
 
             # save results
@@ -394,16 +382,16 @@ if __name__ == '__main__':
             
             # canonical_mesh_optimized.export('canonical_mesh_optimized_{}.obj'.format(i))
             deformed_mesh_optimized.vertices = normalize_verts(deformed_mesh_optimized.vertices)
-            deformed_mesh_optimized.export(os.path.join(save_folder,'deformed_canonical_{}.obj'.format(i)))
+            # deformed_mesh_optimized.export(os.path.join(save_folder,'deformed_canonical_{}.obj'.format(i)))
             vertice_final = np.matmul(deformed_mesh_optimized.vertices, R_c2w) + np.mean(point_cloud, axis=0)
             deformed_mesh_rot = trimesh.Trimesh(vertice_final, deformed_mesh.faces, process=False)
-            deformed_mesh_rot.export(os.path.join(save_folder,'deformed_ori_{}.obj'.format(i)))
+            deformed_mesh_rot.export(os.path.join(save_folder,'{}_deformed_ori_{}.ply'.format(imgname,i)))
             origin= trimesh.points.PointCloud(point_cloud)
             origin_canonical = trimesh.points.PointCloud(point_cloud_canonical)
-            origin.export(os.path.join(save_folder, 'origin_pt{}.ply').format(i))
-            origin_canonical.export(os.path.join(save_folder, 'origin_canonical_pt{}.ply'.format(i)))
-            imageio.mimsave(os.path.join(save_folder,'canonical_img_{}.gif'.format(i)), canonical_img, 'GIF',fps=5)
-            imageio.mimsave(os.path.join(save_folder ,'deform_img_{}.gif'.format(i)), deform_img, 'GIF', fps=5)
+            # origin.export(os.path.join(save_folder, 'origin_pt{}.ply').format(i))
+            # origin_canonical.export(os.path.join(save_folder, 'origin_canonical_pt{}.obj'.format(i)))
+            imageio.mimsave(os.path.join(save_folder,'{}_canonical_img_{}.gif'.format(imgname,i)), canonical_img, 'GIF',duration=5)
+            imageio.mimsave(os.path.join(save_folder ,'{}_deform_img_{}.gif'.format(imgname, i)), deform_img, 'GIF', duration=5)
             
             pass
         
@@ -456,3 +444,4 @@ if __name__ == '__main__':
                 vertice_final = np.matmul(deformed_mesh_optimized.vertices, R_c2w) 
                 deformed_mesh_rot = trimesh.Trimesh(vertice_final, deformed_mesh.faces, process=False)
                 # deformed_mesh_rot.export('deformed_ori_{}.obj'.format(i))
+

@@ -111,14 +111,14 @@ def rgbd_to_voxel(rgb,depth, grid_points):
         depth = np.ascontiguousarray(depth).astype(np.float32) / depth_scale
         depth = o3d.geometry.Image(np.ascontiguousarray(depth).astype(np.float32))
     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb, depth)
-    image_width = 512
-    image_height = 512
+    image_width = 6270
+    image_height = 4480
     sensor_width_mm = 32
     pixels_per_mm = image_width / sensor_width_mm
     fx = fy = 35 * pixels_per_mm
     cx = image_width / 2
     cy = image_height / 2
-    intrinsics = o3d.camera.PinholeCameraIntrinsic(image_width, image_height, fx, fy, cx, cy)
+    intrinsics = o3d.camera.PinholeCameraIntrinsic(image_width, image_height, 6540, 6540, 10.360869810272842, 0.99941806951716805)
     pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
     rgbd_image,intrinsics)
     pcd_points = np.asarray(pcd.points)
